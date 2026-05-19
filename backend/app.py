@@ -19,6 +19,7 @@ from routes.inventario import bp as inventario_bp
 from routes.tickets import bp as tickets_bp
 from routes.comandas import bp as comandas_bp
 from routes.dashboard import bp as dashboard_bp
+from routes.compras import bp as compras_bp
 
 app.register_blueprint(categorias_bp)
 app.register_blueprint(unidades_bp)
@@ -27,6 +28,8 @@ app.register_blueprint(inventario_bp)
 app.register_blueprint(tickets_bp)
 app.register_blueprint(comandas_bp)
 app.register_blueprint(dashboard_bp)
+app.register_blueprint(compras_bp)
+app.register_blueprint(compras_bp)
 
 @app.route('/health', methods=['GET'])
 def health():

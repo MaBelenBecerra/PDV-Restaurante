@@ -161,6 +161,71 @@ JOIN comandas co ON co.id = ci.comanda_id
 JOIN tickets  t  ON t.id  = co.ticket_id AND t.estado = 'abierto'
 GROUP BY ci.estado;
 
+-- Módulo de Compras
+CREATE TABLE IF NOT EXISTS proveedores (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre    TEXT NOT NULL UNIQUE,
+    contacto  TEXT,
+    telefono  TEXT,
+    email     TEXT,
+    creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS compras (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    proveedor_id INTEGER NOT NULL REFERENCES proveedores(id),
+    estado      TEXT NOT NULL DEFAULT 'pendiente'
+                     CHECK (estado IN ('pendiente','confirmada','cancelada')),
+    fecha       TEXT NOT NULL DEFAULT (datetime('now')),
+    total       REAL NOT NULL DEFAULT 0,
+    creado_en   TEXT NOT NULL DEFAULT (datetime('now')),
+    confirmado_en TEXT
+);
+
+CREATE TABLE IF NOT EXISTS compra_items (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    compra_id   INTEGER NOT NULL REFERENCES compras(id),
+    producto_id INTEGER NOT NULL REFERENCES productos(id),
+    cantidad    INTEGER NOT NULL CHECK (cantidad > 0),
+    precio_unitario REAL NOT NULL CHECK (precio_unitario > 0),
+    subtotal    REAL NOT NULL
+);
+
+-- Trigger: aumentar stock cuando se confirma compra
+CREATE TRIGGER IF NOT EXISTS trg_aumentar_stock AFTER UPDATE ON compras
+WHEN NEW.estado = 'confirmada' AND OLD.estado != 'confirmada'
+BEGIN
+    UPDATE productos SET stock = stock + (
+        SELECT COALESCE(SUM(cantidad),0) FROM compra_items
+        WHERE compra_id = NEW.id AND producto_id = productos.id
+    )
+    WHERE id IN (SELECT DISTINCT producto_id FROM compra_items WHERE compra_id = NEW.id);
+    
+    INSERT INTO ajustes_stock (producto_id, tipo, cantidad, motivo)
+    SELECT producto_id, 'entrada', cantidad, 'Compra confirmada #' || NEW.id
+    FROM compra_items WHERE compra_id = NEW.id;
+    
+    UPDATE compras SET confirmado_en = datetime('now') WHERE id = NEW.id;
+END;
+
+-- Vista: compras pendientes
+CREATE VIEW IF NOT EXISTS v_compras_pendientes AS
+SELECT c.id, c.proveedor_id, p.nombre AS proveedor, c.estado,
+       COUNT(ci.id) AS total_items,
+       COALESCE(SUM(ci.subtotal),0) AS total,
+       c.fecha
+FROM compras c
+JOIN proveedores p ON p.id = c.proveedor_id
+LEFT JOIN compra_items ci ON ci.compra_id = c.id
+WHERE c.estado = 'pendiente'
+GROUP BY c.id;
+
+-- Datos de prueba: proveedores
+INSERT OR IGNORE INTO proveedores (nombre, contacto, telefono, email) VALUES
+    ('Distribuidora ABC', 'Pedro López', '555-0001', 'pedrolópez@distribuiodora.com'),
+    ('Fresh Foods S.A.', 'María García', '555-0002', 'maria@freshfoods.com'),
+    ('Bebidas Premium', 'Carlos Rodríguez', '555-0003', 'carlos@bebidaspremium.com');
+
 -- Datos de prueba iniciales
 INSERT OR IGNORE INTO categorias (nombre) VALUES
     ('Entradas'),('Platos principales'),('Postres'),('Bebidas'),('Cócteles');
