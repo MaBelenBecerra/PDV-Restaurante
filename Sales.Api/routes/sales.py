@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 import uuid
 import datetime
 from database import query, execute
+from inventory_client import DownstreamServiceError
 
 bp = Blueprint('sales', __name__)
 
@@ -243,8 +244,11 @@ def sales_add_ticket_item(company_cen, ticket_cen):
                 'total': float(updated_t['total'])
             }
         }), 201
+    except DownstreamServiceError as e:
+        return jsonify({'error': str(e)}), e.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
 
 @bp.route('/api/sales/companies/<company_cen>/tickets/<ticket_cen>/items/<item_cen>', methods=['PATCH'])
 def sales_update_ticket_item(company_cen, ticket_cen, item_cen):
@@ -303,8 +307,11 @@ def sales_update_ticket_item(company_cen, ticket_cen, item_cen):
                 'total': float(updated_t['total'])
             }
         })
+    except DownstreamServiceError as e:
+        return jsonify({'error': str(e)}), e.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
 
 @bp.route('/api/sales/companies/<company_cen>/tickets/<ticket_cen>/items/<item_cen>', methods=['DELETE'])
 def sales_delete_ticket_item(company_cen, ticket_cen, item_cen):
@@ -402,8 +409,11 @@ def sales_pay_ticket(company_cen, ticket_cen):
             'status': 'PAID',
             'amount': float(amount)
         })
+    except DownstreamServiceError as e:
+        return jsonify({'error': str(e)}), e.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
 
 # ==========================================
 # 2. COMANDAS & KDS ENDPOINTS

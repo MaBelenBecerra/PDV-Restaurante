@@ -1,0 +1,530 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Inventory API",
+    "description": "Microservicio de catálogo de productos, categorías, unidades de medida y gestión de stock del sistema PDV Restaurante.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5143",
+      "description": "Servidor local de desarrollo"
+    }
+  ],
+  "paths": {
+    "/api/inventory/companies": {
+      "get": {
+        "summary": "Obtener empresas",
+        "description": "Devuelve la lista de empresas activas registradas en el sistema.",
+        "responses": {
+          "200": {
+            "description": "Lista de empresas obtenida con éxito.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Company"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inventory/companies/{company_cen}": {
+      "get": {
+        "summary": "Obtener detalle de empresa",
+        "description": "Obtiene la información de una empresa específica por su identificador único (CEN). Si no existe, se crea dinámicamente.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "description": "CEN GUID de la empresa",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detalle de la empresa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Company"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Empresa no encontrada."
+          }
+        }
+      }
+    },
+    "/api/inventory/companies/{company_cen}/categories": {
+      "get": {
+        "summary": "Obtener categorías",
+        "description": "Obtiene la lista completa de categorías de productos.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "description": "CEN GUID de la empresa",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de categorías.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Category"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Crear categoría",
+        "description": "Crea una nueva categoría de productos.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "description": "CEN GUID de la empresa",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "Entradas"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Categoría creada con éxito.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Category"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud inválida o categoría ya existente."
+          }
+        }
+      }
+    },
+    "/api/inventory/companies/{company_cen}/categories/{category_cen}": {
+      "put": {
+        "summary": "Actualizar categoría",
+        "description": "Modifica el nombre de una categoría existente.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "description": "CEN GUID de la empresa",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "category_cen",
+            "in": "path",
+            "required": true,
+            "description": "CEN GUID de la categoría",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "Entradas Frías"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Categoría actualizada con éxito.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Category"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Categoría no encontrada."
+          }
+        }
+      }
+    },
+    "/api/inventory/companies/{company_cen}/units": {
+      "get": {
+        "summary": "Obtener unidades",
+        "description": "Obtiene la lista de unidades de medida para productos.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de unidades de medida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Unit" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Crear unidad",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string", "example": "Kilogramo" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Unidad de medida creada.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Unit" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inventory/companies/{company_cen}/products": {
+      "get": {
+        "summary": "Obtener productos",
+        "description": "Devuelve la lista de productos disponibles en el catálogo de la empresa.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de productos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Product" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Crear producto",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "price", "stock", "category_cen", "unit_cen"],
+                "properties": {
+                  "name": { "type": "string", "example": "Ceviche mixto" },
+                  "price": { "type": "number", "example": 45.00 },
+                  "stock": { "type": "number", "example": 20 },
+                  "category_cen": { "type": "string", "format": "uuid" },
+                  "unit_cen": { "type": "string", "format": "uuid" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Producto creado con éxito.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Product" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inventory/companies/{company_cen}/products/sellable": {
+      "get": {
+        "summary": "Obtener productos vendibles (PDV)",
+        "description": "Obtiene la lista de productos que están activos y cuentan con stock disponible para su venta en el PDV.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de productos vendibles.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Product" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inventory/companies/{company_cen}/products/{product_cen}/status": {
+      "patch": {
+        "summary": "Cambiar estado de producto",
+        "description": "Permite alternar entre activo/inactivo o agotado/disponible de un producto.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "product_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "active": { "type": "boolean", "example": true },
+                  "outOfStock": { "type": "boolean", "example": false }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Estado actualizado correctamente."
+          }
+        }
+      }
+    },
+    "/api/inventory/companies/{company_cen}/products/validate-stock": {
+      "post": {
+        "summary": "Validar stock de producto",
+        "description": "Permite a otros microservicios (como Ventas) validar si existe suficiente stock de un producto antes de agregarlo a un pedido.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["productCen", "quantity"],
+                "properties": {
+                  "productCen": { "type": "string", "format": "uuid" },
+                  "quantity": { "type": "number", "example": 2 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado de la validación.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "valid": { "type": "boolean" },
+                    "availableStock": { "type": "number" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inventory/companies/{company_cen}/products/decrement-stock": {
+      "post": {
+        "summary": "Decrementar stock de producto",
+        "description": "Reduce el stock de un producto tras concretar una venta.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["productCen", "quantity"],
+                "properties": {
+                  "productCen": { "type": "string", "format": "uuid" },
+                  "quantity": { "type": "number", "example": 2 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stock decrementado exitosamente."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Company": {
+        "type": "object",
+        "properties": {
+          "cen": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "nit": { "type": "string" },
+          "active": { "type": "boolean" }
+        }
+      },
+      "Category": {
+        "type": "object",
+        "properties": {
+          "cen": { "type": "string", "format": "uuid" },
+          "code": { "type": "string" },
+          "name": { "type": "string" },
+          "active": { "type": "boolean" }
+        }
+      },
+      "Unit": {
+        "type": "object",
+        "properties": {
+          "cen": { "type": "string", "format": "uuid" },
+          "code": { "type": "string" },
+          "name": { "type": "string" },
+          "abbreviation": { "type": "string" },
+          "active": { "type": "boolean" }
+        }
+      },
+      "Product": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "description": "Representa el CEN del producto" },
+          "code": { "type": "string" },
+          "nombre": { "type": "string" },
+          "precio": { "type": "number" },
+          "stock": { "type": "number" },
+          "categoria_id": { "type": "integer" },
+          "unidad_id": { "type": "integer" },
+          "activo": { "type": "integer" },
+          "agotado": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

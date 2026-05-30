@@ -1,0 +1,546 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Sales API",
+    "description": "Microservicio de ventas, facturación, comensales, KDS (cocina/bar) y dashboard analítico del sistema PDV Restaurante.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5074",
+      "description": "Servidor local de desarrollo"
+    }
+  ],
+  "paths": {
+    "/api/sales/companies/{company_cen}/tickets": {
+      "get": {
+        "summary": "Obtener tickets",
+        "description": "Obtiene la lista de tickets (cuentas) de la empresa, opcionalmente filtrada por estado (abierto, pagado, cancelado).",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "description": "Filtrar por estado del ticket",
+            "schema": {
+              "type": "string",
+              "enum": ["abierto", "pagado", "cancelado"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de tickets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Ticket" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Crear ticket (cuenta)",
+        "description": "Abre una nueva cuenta/mesa en el sistema asignándole un mesero.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["mesero"],
+                "properties": {
+                  "mesero": { "type": "string", "example": "Carlos" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Ticket creado exitosamente.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Ticket" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sales/companies/{company_cen}/tickets/{ticket_cen}": {
+      "get": {
+        "summary": "Obtener detalle de ticket",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "ticket_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detalles del ticket.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Ticket" }
+              }
+            }
+          },
+          "404": {
+            "description": "Ticket no encontrado."
+          }
+        }
+      }
+    },
+    "/api/sales/companies/{company_cen}/tickets/{ticket_cen}/items": {
+      "get": {
+        "summary": "Obtener items del ticket",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "ticket_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de items agregados al ticket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/TicketItem" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Agregar item al ticket",
+        "description": "Agrega un producto a la comanda del ticket actual. Realiza una validación HTTP interna de stock con el API de Inventario.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "ticket_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["productCen"],
+                "properties": {
+                  "productCen": { "type": "string", "format": "uuid", "description": "CEN GUID del producto a agregar" },
+                  "quantity": { "type": "integer", "default": 1 },
+                  "notes": { "type": "string", "example": "sin cebolla" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Item agregado exitosamente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cen": { "type": "string", "format": "uuid" },
+                    "productCen": { "type": "string", "format": "uuid" },
+                    "quantity": { "type": "integer" },
+                    "unitPrice": { "type": "number" },
+                    "notes": { "type": "string" },
+                    "ticket_totals": { "$ref": "#/components/schemas/TicketTotals" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Stock insuficiente u error en parámetros."
+          }
+        }
+      }
+    },
+    "/api/sales/companies/{company_cen}/tickets/{ticket_cen}/items/{item_cen}": {
+      "patch": {
+        "summary": "Actualizar item del ticket",
+        "description": "Modifica la cantidad o la nota especial de un item agregado a la comanda.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "ticket_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "item_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "quantity": { "type": "integer", "example": 3 },
+                  "notes": { "type": "string", "example": "bien cocido" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Item actualizado exitosamente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cen": { "type": "string", "format": "uuid" },
+                    "ticket_totals": { "$ref": "#/components/schemas/TicketTotals" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Eliminar item del ticket",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "ticket_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "item_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Item eliminado del ticket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "deleted" },
+                    "ticket_totals": { "$ref": "#/components/schemas/TicketTotals" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sales/companies/{company_cen}/tickets/{ticket_cen}/cancel": {
+      "post": {
+        "summary": "Cancelar ticket",
+        "description": "Cancela el ticket y libera la mesa.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "ticket_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ticket cancelado correctamente."
+          }
+        }
+      }
+    },
+    "/api/sales/companies/{company_cen}/tickets/{ticket_cen}/payment": {
+      "post": {
+        "summary": "Cobrar ticket",
+        "description": "Procesa el pago del ticket (efectivo, QR, tarjeta), cerrándolo y realizando la llamada HTTP hacia la API de Inventario para descontar el stock de manera definitiva en la base de datos.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "ticket_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["metodo"],
+                "properties": {
+                  "metodo": { "type": "string", "enum": ["efectivo", "qr", "tarjeta"], "example": "efectivo" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pago registrado y ticket cerrado."
+          }
+        }
+      }
+    },
+    "/api/sales/companies/{company_cen}/tickets/{ticket_cen}/send": {
+      "post": {
+        "summary": "Enviar comanda a KDS",
+        "description": "Envía los items del ticket actual que no han sido preparados aún a las respectivas estaciones del KDS (cocina o bar).",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "ticket_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Comanda despachada al KDS exitosamente."
+          }
+        }
+      }
+    },
+    "/api/sales/companies/{company_cen}/kds/teams/{station_cen}/items": {
+      "get": {
+        "summary": "Obtener comandas del KDS",
+        "description": "Obtiene la lista de ítems de comanda asignados a una estación física (ej. Cocina o Bar) que se encuentran pendientes de preparación.",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "station_cen",
+            "in": "path",
+            "required": true,
+            "description": "Identificador entero o clave de la estación (1: Cocina, 2: Bar)",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de ítems de KDS pendientes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/KdsItem" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sales/companies/{company_cen}/kds/items/{item_cen}/status": {
+      "patch": {
+        "summary": "Actualizar estado de preparación",
+        "description": "Cambia el estado de preparación de un ítem en KDS (de pendiente a listo, entregado, etc.).",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "item_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["status"],
+                "properties": {
+                  "status": { "type": "string", "enum": ["pendiente", "listo", "entregado"], "example": "listo" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Estado actualizado correctamente."
+          }
+        }
+      }
+    },
+    "/api/sales/companies/{company_cen}/dashboard/daily-sales": {
+      "get": {
+        "summary": "Reporte de ventas del día",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Métricas diarias de facturación.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total_ventas": { "type": "number" },
+                    "cantidad_tickets": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Ticket": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "cen": { "type": "string", "format": "uuid" },
+          "mesero": { "type": "string" },
+          "estado": { "type": "string" },
+          "subtotal": { "type": "number" },
+          "impuesto": { "type": "number" },
+          "total": { "type": "number" },
+          "creado_en": { "type": "string", "format": "date-time" }
+        }
+      },
+      "TicketItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "cen": { "type": "string", "format": "uuid" },
+          "producto_id": { "type": "integer" },
+          "cantidad": { "type": "integer" },
+          "precio_unitario": { "type": "number" },
+          "subtotal": { "type": "number" },
+          "nota": { "type": "string" }
+        }
+      },
+      "TicketTotals": {
+        "type": "object",
+        "properties": {
+          "subtotal": { "type": "number" },
+          "impuesto": { "type": "number" },
+          "total": { "type": "number" }
+        }
+      },
+      "KdsItem": {
+        "type": "object",
+        "properties": {
+          "item_cen": { "type": "string", "format": "uuid" },
+          "ticket_cen": { "type": "string", "format": "uuid" },
+          "mesero": { "type": "string" },
+          "nombre": { "type": "string" },
+          "cantidad": { "type": "integer" },
+          "nota": { "type": "string" },
+          "estado": { "type": "string" },
+          "creado_en": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

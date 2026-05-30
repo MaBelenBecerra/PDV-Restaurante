@@ -109,13 +109,13 @@ Si prefieres realizar el proceso de instalación y arranque de forma manual, sig
 
 ---
 
-## 🌐 Puertos del Ecosistema
+## 🌐 Puertos del Ecosistema y Documentación (Swagger UI)
 
-Una vez que los servicios estén activos, podrás acceder a ellos a través de los siguientes endpoints locales:
+Una vez que los servicios estén activos, podrás acceder a ellos y explorar su API interactiva a través de los siguientes enlaces locales:
 
 - **Frontend (Vite + React)**: [http://localhost:5173](http://localhost:5173)
-- **Inventory API (Microservicio)**: [http://localhost:5143](http://localhost:5143)
-- **Sales API (Microservicio)**: [http://localhost:5074](http://localhost:5074)
+- **Inventory API (Microservicio)**: [http://localhost:5143](http://localhost:5143) | 📖 Swagger UI: [http://localhost:5143/swagger](http://localhost:5143/swagger)
+- **Sales API (Microservicio)**: [http://localhost:5074](http://localhost:5074) | 📖 Swagger UI: [http://localhost:5074/swagger](http://localhost:5074/swagger)
 - **Purchases API (Microservicio)**: [http://localhost:5229](http://localhost:5229)
 
 ---

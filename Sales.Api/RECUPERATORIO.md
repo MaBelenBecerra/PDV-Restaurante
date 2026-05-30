@@ -61,15 +61,19 @@ Cuando un usuario registra una venta en el sistema, el flujo es el siguiente:
 **Respuesta:** Las llamadas HTTP se realizan desde el módulo **`inventory_client.py`**, que define tres funciones principales:
 
 ```python
-# inventory_client.py (líneas 1-41)
+# inventory_client.py
 
 import os
 import requests
 
 INVENTORY_API_URL = os.environ.get("INVENTORY_API_URL", "http://localhost:5143")
 
+class DownstreamServiceError(Exception):
+    def __init__(self, message, status_code=503):
+        super().__init__(message)
+        self.status_code = status_code
+
 def lookup_products(company_cen, product_cens):
-    """Busca múltiples productos por CEN. Retorna detalles de precios, nombres, etc."""
     if not product_cens:
         return []
     try:
@@ -77,23 +81,27 @@ def lookup_products(company_cen, product_cens):
         res = requests.post(url, json={"productCens": product_cens}, timeout=5)
         if res.status_code == 200:
             return res.json()
-    except Exception as e:
-        print(f"Error in lookup_products: {e}")
-    return []
+        elif res.status_code == 404:
+            raise DownstreamServiceError("Compañía o productos no encontrados en inventario", 404)
+        else:
+            raise DownstreamServiceError(f"Error en el servicio de inventario (HTTP {res.status_code})", 502)
+    except requests.exceptions.RequestException as e:
+        raise DownstreamServiceError("El servicio de inventario no está disponible o no responde", 503)
 
 def validate_stock(company_cen, product_cen, quantity):
-    """Valida si hay stock suficiente SIN descontar. Usado antes de agregar item."""
     try:
         url = f"{INVENTORY_API_URL}/api/inventory/companies/{company_cen}/stock/validate"
         res = requests.post(url, json={"productCen": product_cen, "quantity": quantity}, timeout=5)
         if res.status_code == 200:
             return res.json().get("available", False)
-    except Exception as e:
-        print(f"Error in validate_stock: {e}")
-    return False
+        elif res.status_code == 404:
+            raise DownstreamServiceError("Producto no encontrado en inventario para validar stock", 404)
+        else:
+            raise DownstreamServiceError(f"Error en el servicio de inventario (HTTP {res.status_code})", 502)
+    except requests.exceptions.RequestException as e:
+        raise DownstreamServiceError("El servicio de inventario no está disponible o no responde", 503)
 
 def consume_stock(company_cen, product_cen, quantity, notes="Ticket payment"):
-    """Consume (descuenta) stock. Usado cuando se PAGA el ticket."""
     try:
         url = f"{INVENTORY_API_URL}/api/inventory/companies/{company_cen}/stock/consume"
         res = requests.post(url, json={
@@ -102,10 +110,16 @@ def consume_stock(company_cen, product_cen, quantity, notes="Ticket payment"):
             "reference": "SALES",
             "notes": notes
         }, timeout=5)
-        return res.status_code in (200, 201)
-    except Exception as e:
-        print(f"Error in consume_stock: {e}")
-    return False
+        if res.status_code in (200, 201):
+            return True
+        elif res.status_code == 404:
+            raise DownstreamServiceError("Producto no encontrado en inventario para descontar stock", 404)
+        elif res.status_code == 409:
+            raise DownstreamServiceError("Stock insuficiente en inventario para completar la venta", 409)
+        else:
+            raise DownstreamServiceError(f"Error al descontar stock (HTTP {res.status_code})", 502)
+    except requests.exceptions.RequestException as e:
+        raise DownstreamServiceError("El servicio de inventario no está disponible o no responde", 503)
 ```
 
 **Punto clave de integración:** Estas funciones son **invocadas desde** `routes/sales.py`:
@@ -151,64 +165,37 @@ INVENTORY_API_URL = os.environ.get("INVENTORY_API_URL", "http://localhost:5143")
 
 ### 3.2.3 — ¿Qué pasa si el Inventario devuelve un error 404 o 500?
 
-**Escenario 1: Error 404 (Producto no encontrado)**
+**Respuesta:** En nuestro sistema hemos implementado un mecanismo robusto de propagación de excepciones mediante una clase personalizada `DownstreamServiceError` para diferenciar claramente los tipos de fallos de integración y retornar el código HTTP correcto al cliente.
 
-**Código en `inventory_client.py`:**
+**Escenario 1: Error 404 (Producto no encontrado en inventario)**
+- Si el microservicio de Inventario devuelve un status `404` (por ejemplo, porque el producto consultado no existe), nuestro `inventory_client.py` captura ese código de estado y lanza un error `DownstreamServiceError("Producto no encontrado en inventario...", 404)`.
+- El controlador en `routes/sales.py` captura esta excepción específica en su bloque `try-except` y retorna un `404 Not Found` al usuario final con la explicación exacta, en lugar de enmascararlo como stock insuficiente.
 
-```python
-def validate_stock(company_cen, product_cen, quantity):
-    try:
-        url = f"{INVENTORY_API_URL}/api/inventory/companies/{company_cen}/stock/validate"
-        res = requests.post(url, json={"productCen": product_cen, "quantity": quantity}, timeout=5)
-        if res.status_code == 200:
-            return res.json().get("available", False)
-    except Exception as e:
-        print(f"Error in validate_stock: {e}")
-    return False  # Retorna False si no es 200
-```
+**Escenario 2: Error 500 o Caída completa (Servidor de Inventario inaccesible)**
+- Si el servicio de Inventario está completamente apagado o inaccesible (puerto cerrado), la petición de `requests` lanza una excepción `ConnectionError` o `Timeout`.
+- Nuestro código intercepta esto y lanza un `DownstreamServiceError("El servicio de inventario no está disponible o no responde", 503)`.
+- El controlador en `routes/sales.py` lo intercepta y devuelve un código **`503 Service Unavailable`** con el mensaje descriptivo al cliente, indicando que el fallo proviene de una dependencia offline.
+- Si el servidor de Inventario responde con un error interno (`500`), el cliente lo intercepta y lanza un `DownstreamServiceError` con código **`502 Bad Gateway`** para diferenciarlo de un bug interno del propio módulo de Ventas.
 
-**Comportamiento en `routes/sales.py` (línea ~212):**
+**Comportamiento robusto del sistema:**
 
-```python
-has_stock = validate_stock(company_cen, product_cen, qty)
-if not has_stock:
-    return jsonify({'error': 'Stock insuficiente en inventario'}), 400
-```
-
-**Resultado:** El cliente recibe un `400 Bad Request` con mensaje `"Stock insuficiente en inventario"`.
+| Caso | HTTP a Inventario | Respuesta de Sales.Api a Cliente | Razón del Código HTTP |
+|------|------------------|----------------------------------|-----------------------|
+| Stock suficiente | 200 + `available: true` | `201 Created` | Flujo normal exitoso. |
+| Stock insuficiente | 200 + `available: false` | `400 Bad Request` | Es una validación de negocio (error del cliente al pedir más de lo que hay). |
+| Producto inexistente | `404 Not Found` | `404 Not Found` | El recurso solicitado no existe en Inventario. |
+| Servidor caído/Timeout | Excepción (de red) | `503 Service Unavailable` | El servicio dependiente no está disponible de forma temporal. |
+| Error interno downstream | `500 Internal Error` | `502 Bad Gateway` | Puerta de enlace incorrecta al recibir respuesta inválida de la API. |
 
 ---
 
-**Escenario 2: Error 500 (Servidor Inventario caído)**
-
-**Código en `inventory_client.py`:**
-
+**Snippet del código en `routes/sales.py` que captura y traduce estas respuestas:**
 ```python
-try:
-    # ... solicitud HTTP ...
-    if res.status_code == 200:
-        return res.json().get("available", False)
-except Exception as e:  # Captura timeout, conexión rechazada, etc.
-    print(f"Error in validate_stock: {e}")
-return False  # Retorna False en cualquier error
+    except DownstreamServiceError as e:
+        return jsonify({'error': str(e)}), e.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 ```
-
-**Comportamiento:**
-
-- Si el puerto 5143 no responde → Timeout (5 segundos) → Excepción capturada → Retorna `False`
-- El cliente recibe `400 "Stock insuficiente en inventario"`
-
-**Problema de diseño:** No diferenciamos entre "sin stock" y "servidor caído". Ambos resultan en el mismo error.
-
-**Comportamiento actual del sistema:**
-
-| Caso | HTTP a Inventario | Respuesta a Cliente |
-|------|------------------|-------------------|
-| 200 + stock OK | 200 + `available: true` | 201 item agregado ✅ |
-| 200 + sin stock | 200 + `available: false` | 400 sin stock |
-| 404 producto | 404 | 400 sin stock (impreciso) |
-| 500 servidor | 500 | 400 sin stock (impreciso) |
-| Timeout | Exception | 400 sin stock (impreciso) |
 
 ---
 
@@ -673,20 +660,18 @@ ENV INVENTORY_API_URL=${INVENTORY_API_URL}
 
 **`inventory_client.py`:**
 ```python
-import os
-import requests
-
-INVENTORY_API_URL = os.environ.get("INVENTORY_API_URL", "http://localhost:5143")
-
 def validate_stock(company_cen, product_cen, quantity):
     try:
         url = f"{INVENTORY_API_URL}/api/inventory/companies/{company_cen}/stock/validate"
         res = requests.post(url, json={"productCen": product_cen, "quantity": quantity}, timeout=5)
         if res.status_code == 200:
             return res.json().get("available", False)
-    except Exception as e:
-        print(f"Error in validate_stock: {e}")
-    return False
+        elif res.status_code == 404:
+            raise DownstreamServiceError("Producto no encontrado en inventario para validar stock", 404)
+        else:
+            raise DownstreamServiceError(f"Error en el servicio de inventario (HTTP {res.status_code})", 502)
+    except requests.exceptions.RequestException as e:
+        raise DownstreamServiceError("El servicio de inventario no está disponible o no responde", 503)
 ```
 
 **`.env.example`:**
