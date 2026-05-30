@@ -11,7 +11,6 @@ backend/restaurante.db
 backend/restaurante.db-wal
 backend/restaurante.db-shm
 backend/routes/__pycache__/
-database
 contracts
 exam
 

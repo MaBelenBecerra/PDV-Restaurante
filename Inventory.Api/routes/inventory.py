@@ -7,13 +7,13 @@ bp = Blueprint('inventory', __name__)
 
 def get_company(company_cen):
     """Retrieve active company by CEN GUID, auto-creating it if missing for seamless interoperability."""
-    company = query("SELECT * FROM empresas WHERE cen = ? AND activo = 1", (company_cen,), fetch='one')
+    company = query("SELECT * FROM empresas WHERE cen = %s AND activo = 1", (company_cen,), fetch='one')
     if not company:
         execute(
-            "INSERT OR IGNORE INTO empresas (cen, nombre, nit, activo) VALUES (?, ?, ?, 1)",
+            "INSERT INTO empresas (cen, nombre, nit, activo) VALUES (%s, %s, %s, 1) ON CONFLICT (cen) DO NOTHING",
             (company_cen, f"Empresa {company_cen[:8]}", "20123456789")
         )
-        company = query("SELECT * FROM empresas WHERE cen = ? AND activo = 1", (company_cen,), fetch='one')
+        company = query("SELECT * FROM empresas WHERE cen = %s AND activo = 1", (company_cen,), fetch='one')
     return company
 
 def datetime_now_str():
@@ -81,14 +81,14 @@ def create_category(company_cen):
         name = data.get('name', '').strip()
         if not name: return jsonify({'error': 'Category name is required'}), 400
         
-        exists = query("SELECT id FROM categorias WHERE nombre = ?", (name,), fetch='one')
+        exists = query("SELECT id FROM categorias WHERE nombre = %s", (name,), fetch='one')
         if exists: return jsonify({'error': 'Category already exists'}), 400
         
         new_cen = str(uuid.uuid4())
         count = query("SELECT COUNT(*) as count FROM categorias", fetch='one')['count']
         new_code = f"CAT-{count+1:05d}"
         
-        execute("INSERT INTO categorias (nombre, cen, code) VALUES (?, ?, ?)", (name, new_cen, new_code))
+        execute("INSERT INTO categorias (nombre, cen, code) VALUES (%s, %s, %s)", (name, new_cen, new_code))
         return jsonify({
             'cen': new_cen,
             'code': new_code,
@@ -104,17 +104,17 @@ def update_category(company_cen, category_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        cat = query("SELECT * FROM categorias WHERE cen = ?", (category_cen,), fetch='one')
+        cat = query("SELECT * FROM categorias WHERE cen = %s", (category_cen,), fetch='one')
         if not cat: return jsonify({'error': 'Category not found'}), 404
         
         data = request.get_json() or {}
         name = data.get('name', '').strip()
         if not name: return jsonify({'error': 'Category name is required'}), 400
         
-        exists = query("SELECT id FROM categorias WHERE nombre = ? AND cen != ?", (name, category_cen), fetch='one')
+        exists = query("SELECT id FROM categorias WHERE nombre = %s AND cen != %s", (name, category_cen), fetch='one')
         if exists: return jsonify({'error': 'Another category with this name already exists'}), 400
         
-        execute("UPDATE categorias SET nombre = ? WHERE cen = ?", (name, category_cen))
+        execute("UPDATE categorias SET nombre = %s WHERE cen = %s", (name, category_cen))
         return jsonify({
             'cen': category_cen,
             'code': cat['code'],
@@ -155,14 +155,14 @@ def create_unit(company_cen):
         name = data.get('name', '').strip()
         if not name: return jsonify({'error': 'Unit name is required'}), 400
         
-        exists = query("SELECT id FROM unidades WHERE nombre = ?", (name,), fetch='one')
+        exists = query("SELECT id FROM unidades WHERE nombre = %s", (name,), fetch='one')
         if exists: return jsonify({'error': 'Unit already exists'}), 400
         
         new_cen = str(uuid.uuid4())
         count = query("SELECT COUNT(*) as count FROM unidades", fetch='one')['count']
         new_code = f"UNI-{count+1:05d}"
         
-        execute("INSERT INTO unidades (nombre, cen, code) VALUES (?, ?, ?)", (name, new_cen, new_code))
+        execute("INSERT INTO unidades (nombre, cen, code) VALUES (%s, %s, %s)", (name, new_cen, new_code))
         return jsonify({
             'cen': new_cen,
             'code': new_code,
@@ -179,17 +179,17 @@ def update_unit(company_cen, unit_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        u = query("SELECT * FROM unidades WHERE cen = ?", (unit_cen,), fetch='one')
+        u = query("SELECT * FROM unidades WHERE cen = %s", (unit_cen,), fetch='one')
         if not u: return jsonify({'error': 'Unit not found'}), 404
         
         data = request.get_json() or {}
         name = data.get('name', '').strip()
         if not name: return jsonify({'error': 'Unit name is required'}), 400
         
-        exists = query("SELECT id FROM unidades WHERE nombre = ? AND cen != ?", (name, unit_cen), fetch='one')
+        exists = query("SELECT id FROM unidades WHERE nombre = %s AND cen != %s", (name, unit_cen), fetch='one')
         if exists: return jsonify({'error': 'Another unit with this name already exists'}), 400
         
-        execute("UPDATE unidades SET nombre = ? WHERE cen = ?", (name, unit_cen))
+        execute("UPDATE unidades SET nombre = %s WHERE cen = %s", (name, unit_cen))
         return jsonify({
             'cen': unit_cen,
             'code': u['code'],
@@ -226,17 +226,18 @@ def get_products(company_cen):
         params = []
         
         if search:
-            sql += ' AND (LOWER(p.nombre) LIKE LOWER(?) OR LOWER(p.code) LIKE LOWER(?))'
+            sql += ' AND (LOWER(p.nombre) LIKE LOWER(%s) OR LOWER(p.code) LIKE LOWER(%s))'
             params.extend([f'%{search}%', f'%{search}%'])
             
         if category_cen:
-            sql += ' AND c.cen = ?'
+            sql += ' AND c.cen = %s'
             params.append(category_cen)
             
-        count_sql = f"SELECT COUNT(*) as count FROM ({sql})"
+        # PostgreSQL doesn't support subqueries as tables without alias
+        count_sql = f"SELECT COUNT(*) as count FROM ({sql}) AS sub"
         total_count = query(count_sql, tuple(params) if params else None, fetch='one')['count']
         
-        sql += ' ORDER BY p.nombre ASC LIMIT ? OFFSET ?'
+        sql += ' ORDER BY p.nombre ASC LIMIT %s OFFSET %s'
         offset = (page - 1) * page_size
         params.extend([page_size, offset])
         
@@ -262,8 +263,9 @@ def get_products(company_cen):
                     'nombre': p['unit_name'],
                     'cenCode': p['unit_code']
                 },
-                'price': p['precio'],
+                'price': float(p['precio']),
                 'cost': 0,
+                'stock': int(p['stock']),
                 'trackStock': True,
                 'isOutOfStock': bool(p['agotado'] or p['stock'] <= 0),
                 'active': bool(p['activo']),
@@ -305,17 +307,17 @@ def get_sellable_products(company_cen):
             sql += ' AND p.agotado = 0 AND p.stock > 0'
             
         if search:
-            sql += ' AND LOWER(p.nombre) LIKE LOWER(?)'
+            sql += ' AND LOWER(p.nombre) LIKE LOWER(%s)'
             params.append(f'%{search}%')
             
         if category_cen:
-            sql += ' AND c.cen = ?'
+            sql += ' AND c.cen = %s'
             params.append(category_cen)
             
-        count_sql = f"SELECT COUNT(*) as count FROM ({sql})"
+        count_sql = f"SELECT COUNT(*) as count FROM ({sql}) AS sub"
         total_count = query(count_sql, tuple(params) if params else None, fetch='one')['count']
         
-        sql += ' ORDER BY p.nombre ASC LIMIT ? OFFSET ?'
+        sql += ' ORDER BY p.nombre ASC LIMIT %s OFFSET %s'
         offset = (page - 1) * page_size
         params.extend([page_size, offset])
         
@@ -341,8 +343,9 @@ def get_sellable_products(company_cen):
                     'nombre': p['unit_name'],
                     'cenCode': p['unit_code']
                 },
-                'price': p['precio'],
+                'price': float(p['precio']),
                 'cost': 0,
+                'stock': int(p['stock']),
                 'trackStock': True,
                 'isOutOfStock': bool(p['agotado'] or p['stock'] <= 0),
                 'active': bool(p['activo']),
@@ -376,10 +379,10 @@ def create_product(company_cen):
         if not category_cen: return jsonify({'error': 'Category CEN is required'}), 400
         if not unit_cen: return jsonify({'error': 'Unit CEN is required'}), 400
         
-        cat = query("SELECT id FROM categorias WHERE cen = ?", (category_cen,), fetch='one')
+        cat = query("SELECT id FROM categorias WHERE cen = %s", (category_cen,), fetch='one')
         if not cat: return jsonify({'error': 'Category not found'}), 400
         
-        u = query("SELECT id FROM unidades WHERE cen = ?", (unit_cen,), fetch='one')
+        u = query("SELECT id FROM unidades WHERE cen = %s", (unit_cen,), fetch='one')
         if not u: return jsonify({'error': 'Unit not found'}), 400
         
         new_cen = str(uuid.uuid4())
@@ -388,7 +391,7 @@ def create_product(company_cen):
         
         execute('''
             INSERT INTO productos (nombre, categoria_id, unidad_id, precio, stock, activo, agotado, cen, code, station_code)
-            VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, 1, 0, %s, %s, %s)
         ''', (nombre, cat['id'], u['id'], precio, stock, new_cen, new_code, station_code))
         
         return jsonify({
@@ -401,6 +404,7 @@ def create_product(company_cen):
             'unitCen': unit_cen,
             'price': precio,
             'cost': 0,
+            'stock': int(stock),
             'trackStock': True,
             'isOutOfStock': False,
             'active': True,
@@ -415,7 +419,7 @@ def update_product(company_cen, product_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        prod = query("SELECT id, code FROM productos WHERE cen = ?", (product_cen,), fetch='one')
+        prod = query("SELECT id, code, stock FROM productos WHERE cen = %s", (product_cen,), fetch='one')
         if not prod: return jsonify({'error': 'Product not found'}), 404
         
         data = request.get_json() or {}
@@ -425,16 +429,16 @@ def update_product(company_cen, product_cen):
         precio = data.get('price', 0.0)
         station_code = data.get('stationCode', 'COCINA').upper()
         
-        cat = query("SELECT id FROM categorias WHERE cen = ?", (category_cen,), fetch='one')
+        cat = query("SELECT id FROM categorias WHERE cen = %s", (category_cen,), fetch='one')
         if not cat: return jsonify({'error': 'Category not found'}), 400
         
-        u = query("SELECT id FROM unidades WHERE cen = ?", (unit_cen,), fetch='one')
+        u = query("SELECT id FROM unidades WHERE cen = %s", (unit_cen,), fetch='one')
         if not u: return jsonify({'error': 'Unit not found'}), 400
         
         execute('''
             UPDATE productos 
-            SET nombre = ?, categoria_id = ?, unidad_id = ?, precio = ?, station_code = ?
-            WHERE cen = ?
+            SET nombre = %s, categoria_id = %s, unidad_id = %s, precio = %s, station_code = %s
+            WHERE cen = %s
         ''', (nombre, cat['id'], u['id'], precio, station_code, product_cen))
         
         return jsonify({
@@ -447,6 +451,7 @@ def update_product(company_cen, product_cen):
             'unitCen': unit_cen,
             'price': precio,
             'cost': 0,
+            'stock': int(prod['stock']),
             'trackStock': True,
             'isOutOfStock': False,
             'active': True,
@@ -461,7 +466,7 @@ def update_product_status(company_cen, product_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        prod = query("SELECT id FROM productos WHERE cen = ?", (product_cen,), fetch='one')
+        prod = query("SELECT id FROM productos WHERE cen = %s", (product_cen,), fetch='one')
         if not prod: return jsonify({'error': 'Product not found'}), 404
         
         data = request.get_json() or {}
@@ -471,19 +476,19 @@ def update_product_status(company_cen, product_cen):
         updates = []
         params = []
         if active is not None:
-            updates.append("activo = ?")
+            updates.append("activo = %s")
             params.append(1 if active else 0)
         if is_out_of_stock is not None:
-            updates.append("agotado = ?")
+            updates.append("agotado = %s")
             params.append(1 if is_out_of_stock else 0)
             
         if updates:
             params.append(product_cen)
-            execute(f"UPDATE productos SET {', '.join(updates)} WHERE cen = ?", tuple(params))
+            execute(f"UPDATE productos SET {', '.join(updates)} WHERE cen = %s", tuple(params))
             
-        updated = query("SELECT * FROM productos WHERE cen = ?", (product_cen,), fetch='one')
-        cat = query("SELECT cen FROM categorias WHERE id = ?", (updated['categoria_id'],), fetch='one')
-        u = query("SELECT cen FROM unidades WHERE id = ?", (updated['unidad_id'],), fetch='one')
+        updated = query("SELECT * FROM productos WHERE cen = %s", (product_cen,), fetch='one')
+        cat = query("SELECT cen FROM categorias WHERE id = %s", (updated['categoria_id'],), fetch='one')
+        u = query("SELECT cen FROM unidades WHERE id = %s", (updated['unidad_id'],), fetch='one')
         
         return jsonify({
             'cen': product_cen,
@@ -493,8 +498,9 @@ def update_product_status(company_cen, product_cen):
             'description': '',
             'categoryCen': cat['cen'] if cat else '',
             'unitCen': u['cen'] if u else '',
-            'price': updated['precio'],
+            'price': float(updated['precio']),
             'cost': 0,
+            'stock': int(updated['stock']),
             'trackStock': True,
             'isOutOfStock': bool(updated['agotado']),
             'active': bool(updated['activo']),
@@ -515,7 +521,7 @@ def lookup_products(company_cen):
         if not product_cens:
             return jsonify([])
             
-        placeholders = ', '.join('?' for _ in product_cens)
+        placeholders = ', '.join('%s' for _ in product_cens)
         sql = f'''
             SELECT p.*, c.cen as category_cen, u.cen as unit_cen
             FROM productos p
@@ -535,8 +541,9 @@ def lookup_products(company_cen):
                 'description': '',
                 'categoryCen': p['category_cen'],
                 'unitCen': p['unit_cen'],
-                'price': p['precio'],
+                'price': float(p['precio']),
                 'cost': 0,
+                'stock': int(p['stock']),
                 'trackStock': True,
                 'isOutOfStock': bool(p['agotado'] or p['stock'] <= 0),
                 'active': bool(p['activo']),
@@ -577,7 +584,7 @@ def stock_validate(company_cen):
         product_cen = data.get('productCen')
         qty = data.get('quantity', 0)
         
-        prod = query("SELECT stock FROM productos WHERE cen = ?", (product_cen,), fetch='one')
+        prod = query("SELECT stock FROM productos WHERE cen = %s", (product_cen,), fetch='one')
         if not prod:
             return jsonify({'available': False, 'quantity': 0})
             
@@ -599,15 +606,15 @@ def stock_consume(company_cen):
         qty = data.get('quantity', 0)
         notes = data.get('notes', 'Ticket payment')
         
-        prod = query("SELECT id, stock FROM productos WHERE cen = ?", (product_cen,), fetch='one')
+        prod = query("SELECT id, stock FROM productos WHERE cen = %s", (product_cen,), fetch='one')
         if not prod:
             return jsonify({'error': 'Product not found'}), 404
             
         if prod['stock'] < qty:
             return jsonify({'error': 'Insufficient stock'}), 409
             
-        execute("UPDATE productos SET stock = stock - ? WHERE cen = ?", (qty, product_cen))
-        execute("INSERT INTO ajustes_stock (producto_id, tipo, cantidad, motivo, creado_en) VALUES (?, 'salida', ?, ?, datetime('now'))", (prod['id'], qty, notes))
+        execute("UPDATE productos SET stock = stock - %s WHERE cen = %s", (qty, product_cen))
+        execute("INSERT INTO ajustes_stock (producto_id, tipo, cantidad, motivo, creado_en) VALUES (%s, 'salida', %s, %s, CURRENT_TIMESTAMP)", (prod['id'], qty, notes))
         
         return jsonify({'message': 'Stock consumed successfully', 'newStock': prod['stock'] - qty})
     except Exception as e:
@@ -624,12 +631,12 @@ def stock_increase(company_cen):
         qty = data.get('quantity', 0)
         notes = data.get('notes', 'Stock adjustment')
         
-        prod = query("SELECT id, stock FROM productos WHERE cen = ?", (product_cen,), fetch='one')
+        prod = query("SELECT id, stock FROM productos WHERE cen = %s", (product_cen,), fetch='one')
         if not prod:
             return jsonify({'error': 'Product not found'}), 404
             
-        execute("UPDATE productos SET stock = stock + ? WHERE cen = ?", (qty, product_cen))
-        execute("INSERT INTO ajustes_stock (producto_id, tipo, cantidad, motivo, creado_en) VALUES (?, 'entrada', ?, ?, datetime('now'))", (prod['id'], qty, notes))
+        execute("UPDATE productos SET stock = stock + %s WHERE cen = %s", (qty, product_cen))
+        execute("INSERT INTO ajustes_stock (producto_id, tipo, cantidad, motivo, creado_en) VALUES (%s, 'entrada', %s, %s, CURRENT_TIMESTAMP)", (prod['id'], qty, notes))
         
         return jsonify({'message': 'Stock increased successfully', 'newStock': prod['stock'] + qty})
     except Exception as e:
@@ -649,7 +656,7 @@ def register_stock_adjustment(company_cen):
         if not product_cen: return jsonify({'error': 'Product CEN is required'}), 400
         if qty == 0: return jsonify({'error': 'Quantity must not be 0'}), 400
         
-        prod = query("SELECT id, stock FROM productos WHERE cen = ?", (product_cen,), fetch='one')
+        prod = query("SELECT id, stock FROM productos WHERE cen = %s", (product_cen,), fetch='one')
         if not prod: return jsonify({'error': 'Product not found'}), 404
         
         tipo = 'entrada' if qty > 0 else 'salida'
@@ -661,13 +668,13 @@ def register_stock_adjustment(company_cen):
         new_cen = str(uuid.uuid4())
         execute('''
             INSERT INTO ajustes_stock (producto_id, tipo, cantidad, motivo, creado_en)
-            VALUES (?, ?, ?, ?, datetime('now'))
+            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
         ''', (prod['id'], tipo, abs_qty, reason))
         
         if tipo == 'entrada':
-            execute("UPDATE productos SET stock = stock + ? WHERE id = ?", (abs_qty, prod['id']))
+            execute("UPDATE productos SET stock = stock + %s WHERE id = %s", (abs_qty, prod['id']))
         else:
-            execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (abs_qty, prod['id']))
+            execute("UPDATE productos SET stock = stock - %s WHERE id = %s", (abs_qty, prod['id']))
             
         return jsonify({
             'cen': new_cen,
@@ -693,7 +700,7 @@ def inventory_dashboard(company_cen):
         
         return jsonify({
             'totalProducts': total_products,
-            'totalStockValue': round(total_stock_value, 2)
+            'totalStockValue': round(float(total_stock_value), 2)
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 400

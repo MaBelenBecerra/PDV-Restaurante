@@ -7,21 +7,21 @@ bp = Blueprint('purchases', __name__)
 
 def get_company(company_cen):
     """Retrieve active company by CEN GUID, auto-creating it if missing for seamless interoperability."""
-    company = query("SELECT * FROM empresas WHERE cen = ? AND activo = 1", (company_cen,), fetch='one')
+    company = query("SELECT * FROM empresas WHERE cen = %s AND activo = 1", (company_cen,), fetch='one')
     if not company:
         execute(
-            "INSERT OR IGNORE INTO empresas (cen, nombre, nit, activo) VALUES (?, ?, ?, 1)",
+            "INSERT INTO empresas (cen, nombre, nit, activo) VALUES (%s, %s, %s, 1) ON CONFLICT (cen) DO NOTHING",
             (company_cen, f"Empresa {company_cen[:8]}", "20123456789")
         )
-        company = query("SELECT * FROM empresas WHERE cen = ? AND activo = 1", (company_cen,), fetch='one')
+        company = query("SELECT * FROM empresas WHERE cen = %s AND activo = 1", (company_cen,), fetch='one')
     return company
 
 def datetime_now_str():
     return datetime.datetime.now().isoformat()
 
 def ensure_local_product(company_cen, product_cen):
-    """Check if product exists locally in SQLite. If not, fetch detail from Inventory.Api and insert a stub."""
-    prod = query("SELECT id, precio, nombre, code FROM productos WHERE cen = ?", (product_cen,), fetch='one')
+    """Check if product exists locally in PostgreSQL. If not, fetch detail from Inventory.Api and insert a stub."""
+    prod = query("SELECT id, precio, nombre, code FROM productos WHERE cen = %s", (product_cen,), fetch='one')
     if prod:
         return prod
         
@@ -41,7 +41,7 @@ def ensure_local_product(company_cen, product_cen):
     # Insert stub product to satisfy foreign key constraints
     prod_id = execute('''
         INSERT INTO productos (nombre, categoria_id, unidad_id, precio, stock, activo, agotado, cen, code, station_code)
-        VALUES (?, ?, ?, ?, 0, 1, 0, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, 0, 1, 0, %s, %s, %s)
     ''', (d['name'], cat_id, uni_id, d['price'], d['cen'], d['code'], d.get('stationCode', 'COCINA')))
     
     return {'id': prod_id, 'precio': d['price'], 'nombre': d['name'], 'code': d['code']}
@@ -69,7 +69,7 @@ def purchases_get_orders(company_cen):
             'cen': r['cen'],
             'supplier': r['supplier_name'],
             'status': map_status.get(r['estado'], 'DRAFT'),
-            'date': r['fecha'],
+            'date': r['fecha'].isoformat() if hasattr(r['fecha'], 'isoformat') else str(r['fecha']),
             'itemCount': r['item_count']
         } for r in compras])
     except Exception as e:
@@ -85,7 +85,7 @@ def purchases_get_order_detail(company_cen, order_cen):
             SELECT c.*, p.nombre as supplier_name, p.cen as supplier_cen
             FROM compras c
             JOIN proveedores p ON p.id = c.proveedor_id
-            WHERE c.cen = ?
+            WHERE c.cen = %s
         ''', (order_cen,), fetch='one')
         if not compra: return jsonify({'error': 'Order not found'}), 404
         
@@ -93,7 +93,7 @@ def purchases_get_order_detail(company_cen, order_cen):
             SELECT ci.*, p.cen as product_cen, p.nombre as product_name
             FROM compra_items ci
             JOIN productos p ON p.id = ci.producto_id
-            WHERE ci.compra_id = ?
+            WHERE ci.compra_id = %s
             ORDER BY ci.id ASC
         ''', (compra['id'],))
         
@@ -102,7 +102,7 @@ def purchases_get_order_detail(company_cen, order_cen):
             'cen': compra['cen'],
             'supplier': compra['supplier_name'],
             'status': map_status.get(compra['estado'], 'DRAFT'),
-            'date': compra['fecha'],
+            'date': compra['fecha'].isoformat() if hasattr(compra['fecha'], 'isoformat') else str(compra['fecha']),
             'items': [{
                 'cen': row['cen'] or str(uuid.uuid4()),
                 'productCen': row['product_cen'],
@@ -124,7 +124,7 @@ def purchases_create_order(company_cen):
         
         if not supplier_cen: return jsonify({'error': 'supplierCen is required'}), 400
         
-        prov = query("SELECT id, nombre FROM proveedores WHERE cen = ?", (supplier_cen,), fetch='one')
+        prov = query("SELECT id, nombre FROM proveedores WHERE cen = %s", (supplier_cen,), fetch='one')
         if not prov: return jsonify({'error': 'Supplier not found'}), 404
         
         new_order_cen = str(uuid.uuid4())
@@ -133,7 +133,7 @@ def purchases_create_order(company_cen):
         
         order_id = execute('''
             INSERT INTO compras (proveedor_id, estado, cen, code)
-            VALUES (?, 'pendiente', ?, ?)
+            VALUES (%s, 'pendiente', %s, %s)
         ''', (prov['id'], new_order_cen, new_code))
         
         total_order = 0.0
@@ -145,13 +145,13 @@ def purchases_create_order(company_cen):
             prod = ensure_local_product(company_cen, p_cen)
             if not prod: continue
             
-            subtotal = prod['precio'] * qty
+            subtotal = float(prod['precio']) * qty
             total_order += subtotal
             new_item_cen = str(uuid.uuid4())
             
             execute('''
                 INSERT INTO compra_items (compra_id, producto_id, cantidad, precio_unitario, subtotal, cen)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
             ''', (order_id, prod['id'], qty, prod['precio'], subtotal, new_item_cen))
             
             items_created.append({
@@ -160,7 +160,7 @@ def purchases_create_order(company_cen):
                 'quantity': qty
             })
             
-        execute("UPDATE compras SET total = ? WHERE id = ?", (total_order, order_id))
+        execute("UPDATE compras SET total = %s WHERE id = %s", (total_order, order_id))
         
         return jsonify({
             'cen': new_order_cen,
@@ -178,7 +178,7 @@ def purchases_confirm_order(company_cen, order_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        compra = query("SELECT id, estado FROM compras WHERE cen = ?", (order_cen,), fetch='one')
+        compra = query("SELECT id, estado FROM compras WHERE cen = %s", (order_cen,), fetch='one')
         if not compra: return jsonify({'error': 'Order not found'}), 404
         
         if compra['estado'] != 'pendiente':
@@ -188,7 +188,7 @@ def purchases_confirm_order(company_cen, order_cen):
             SELECT ci.cantidad, p.cen as product_cen, p.nombre
             FROM compra_items ci
             JOIN productos p ON p.id = ci.producto_id
-            WHERE ci.compra_id = ?
+            WHERE ci.compra_id = %s
         ''', (compra['id'],))
         
         if not items:
@@ -200,7 +200,7 @@ def purchases_confirm_order(company_cen, order_cen):
             if not success:
                 return jsonify({'error': f"Failed to increase stock in inventory for {item['nombre']}"}), 400
                 
-        execute("UPDATE compras SET estado = 'confirmada', confirmado_en = datetime('now') WHERE cen = ?", (order_cen,))
+        execute("UPDATE compras SET estado = 'confirmada', confirmado_en = CURRENT_TIMESTAMP WHERE cen = %s", (order_cen,))
         return purchases_get_order_detail(company_cen, order_cen)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -211,13 +211,13 @@ def purchases_cancel_order(company_cen, order_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        compra = query("SELECT id, estado FROM compras WHERE cen = ?", (order_cen,), fetch='one')
+        compra = query("SELECT id, estado FROM compras WHERE cen = %s", (order_cen,), fetch='one')
         if not compra: return jsonify({'error': 'Order not found'}), 404
         
         if compra['estado'] != 'pendiente':
             return jsonify({'error': 'Only pending orders can be cancelled'}), 400
             
-        execute("UPDATE compras SET estado = 'cancelada' WHERE cen = ?", (order_cen,))
+        execute("UPDATE compras SET estado = 'cancelada' WHERE cen = %s", (order_cen,))
         return purchases_get_order_detail(company_cen, order_cen)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -254,7 +254,7 @@ def purchases_create_supplier(company_cen):
         
         if not name: return jsonify({'error': 'Supplier name is required'}), 400
         
-        exists = query("SELECT id FROM proveedores WHERE nombre = ?", (name,), fetch='one')
+        exists = query("SELECT id FROM proveedores WHERE nombre = %s", (name,), fetch='one')
         if exists: return jsonify({'error': 'Supplier with this name already exists'}), 400
         
         new_cen = str(uuid.uuid4())
@@ -262,7 +262,7 @@ def purchases_create_supplier(company_cen):
             count = query("SELECT COUNT(*) as count FROM proveedores", fetch='one')['count']
             code = f"SUP-{count+1:05d}"
             
-        execute("INSERT INTO proveedores (nombre, cen, code) VALUES (?, ?, ?)", (name, new_cen, code))
+        execute("INSERT INTO proveedores (nombre, cen, code) VALUES (%s, %s, %s)", (name, new_cen, code))
         return jsonify({
             'supplierCen': new_cen,
             'code': code,

@@ -102,7 +102,7 @@ export default function Inventario({ showToast }) {
                     {getEstadoLabel(item.estado)}
                   </span>
                 </td>
-                <td className="px-6 py-3 text-right">${item.precio.toFixed(2)}</td>
+                <td className="px-6 py-3 text-right">Bs. {item.precio.toFixed(2)}</td>
                 <td className="px-6 py-3 text-center">
                   <button
                     onClick={() => {

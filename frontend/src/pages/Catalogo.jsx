@@ -258,7 +258,7 @@ export default function Catalogo({ showToast }) {
                     <td className="px-6 py-3">{p.nombre}</td>
                     <td className="px-6 py-3">{p.categoria}</td>
                     <td className="px-6 py-3">{p.unidad}</td>
-                    <td className="px-6 py-3 text-right font-semibold">${p.precio.toFixed(2)}</td>
+                    <td className="px-6 py-3 text-right font-semibold">Bs. {p.precio.toFixed(2)}</td>
                     <td className="px-6 py-3 text-center">{p.stock}</td>
                     <td className="px-6 py-3 text-center">
                       <span className={`px-2 py-1 rounded text-white text-xs font-semibold ${

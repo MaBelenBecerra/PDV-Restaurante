@@ -73,8 +73,12 @@ export default function App() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-        <div className="flex-1 overflow-auto">
+      <div className="flex-1 flex flex-col h-screen overflow-hidden">
+        <div className={`flex-1 ${
+          ['pdv', 'cocina', 'bar'].includes(currentPage)
+            ? 'h-full overflow-hidden flex flex-col'
+            : 'overflow-y-auto'
+        }`}>
           {renderPage()}
         </div>
       </div>

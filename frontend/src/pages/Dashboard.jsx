@@ -48,7 +48,7 @@ export default function Dashboard({ showToast }) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <StatCard
           label="Total Vendido Hoy"
-          value={`$${data.ventas_hoy.total_vendido.toFixed(2)}`}
+          value={`Bs. ${data.ventas_hoy.total_vendido.toFixed(2)}`}
           color="bg-green-100"
         />
         <StatCard
@@ -58,7 +58,7 @@ export default function Dashboard({ showToast }) {
         />
         <StatCard
           label="Ticket Promedio"
-          value={`$${data.ventas_hoy.ticket_promedio.toFixed(2)}`}
+          value={`Bs. ${data.ventas_hoy.ticket_promedio.toFixed(2)}`}
           color="bg-purple-100"
         />
       </div>
@@ -76,7 +76,7 @@ export default function Dashboard({ showToast }) {
                 </div>
                 <div className="text-right">
                   <p className="font-semibold">{p.unidades_vendidas}</p>
-                  <p className="text-sm text-gray-600">${p.total_vendido.toFixed(2)}</p>
+                  <p className="text-sm text-gray-600">Bs. {p.total_vendido.toFixed(2)}</p>
                 </div>
               </div>
             ))}

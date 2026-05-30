@@ -7,21 +7,21 @@ bp = Blueprint('sales', __name__)
 
 def get_company(company_cen):
     """Retrieve active company by CEN GUID, auto-creating it if missing for seamless interoperability."""
-    company = query("SELECT * FROM empresas WHERE cen = ? AND activo = 1", (company_cen,), fetch='one')
+    company = query("SELECT * FROM empresas WHERE cen = %s AND activo = 1", (company_cen,), fetch='one')
     if not company:
         execute(
-            "INSERT OR IGNORE INTO empresas (cen, nombre, nit, activo) VALUES (?, ?, ?, 1)",
+            "INSERT INTO empresas (cen, nombre, nit, activo) VALUES (%s, %s, %s, 1) ON CONFLICT (cen) DO NOTHING",
             (company_cen, f"Empresa {company_cen[:8]}", "20123456789")
         )
-        company = query("SELECT * FROM empresas WHERE cen = ? AND activo = 1", (company_cen,), fetch='one')
+        company = query("SELECT * FROM empresas WHERE cen = %s AND activo = 1", (company_cen,), fetch='one')
     return company
 
 def datetime_now_str():
     return datetime.datetime.now().isoformat()
 
 def ensure_local_product(company_cen, product_cen):
-    """Check if product exists locally in SQLite. If not, fetch detail from Inventory.Api and insert a stub."""
-    prod = query("SELECT id, precio, nombre, code FROM productos WHERE cen = ?", (product_cen,), fetch='one')
+    """Check if product exists locally in PostgreSQL. If not, fetch detail from Inventory.Api and insert a stub."""
+    prod = query("SELECT id, precio, nombre, code FROM productos WHERE cen = %s", (product_cen,), fetch='one')
     if prod:
         return prod
         
@@ -41,7 +41,7 @@ def ensure_local_product(company_cen, product_cen):
     # Insert stub product to satisfy foreign key constraints
     prod_id = execute('''
         INSERT INTO productos (nombre, categoria_id, unidad_id, precio, stock, activo, agotado, cen, code, station_code)
-        VALUES (?, ?, ?, ?, 0, 1, 0, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, 0, 1, 0, %s, %s, %s)
     ''', (d['name'], cat_id, uni_id, d['price'], d['cen'], d['code'], d.get('stationCode', 'COCINA')))
     
     return {'id': prod_id, 'precio': d['price'], 'nombre': d['name'], 'code': d['code']}
@@ -65,7 +65,7 @@ def sales_get_tickets(company_cen):
             map_est = {'OPEN': 'abierto', 'PAID': 'pagado', 'CANCELLED': 'cancelado'}
             mapped = map_est.get(estado)
             if mapped:
-                sql += ' AND estado = ?'
+                sql += ' AND estado = %s'
                 params.append(mapped)
                 
         sql += ' ORDER BY id DESC'
@@ -73,16 +73,16 @@ def sales_get_tickets(company_cen):
         
         res = []
         for t in tickets:
-            item_count = query("SELECT SUM(cantidad) as qty FROM ticket_items WHERE ticket_id = ?", (t['id'],), fetch='one')['qty'] or 0
+            item_count = query("SELECT SUM(cantidad) as qty FROM ticket_items WHERE ticket_id = %s", (t['id'],), fetch='one')['qty'] or 0
             map_status = {'abierto': 'OPEN', 'pagado': 'PAID', 'cancelado': 'CANCELLED'}
             res.append({
                 'cen': t['cen'],
                 'ticketNumber': t['code'] or f"TIC-{t['id']:05d}",
                 'status': map_status.get(t['estado'], 'OPEN'),
                 'itemCount': item_count,
-                'createdAt': t['creado_en'],
+                'createdAt': t['creado_en'].isoformat() if hasattr(t['creado_en'], 'isoformat') else str(t['creado_en']),
                 'mesero': t['mesero'],
-                'total': t['total']
+                'total': float(t['total'])
             })
         return jsonify(res)
     except Exception as e:
@@ -106,7 +106,7 @@ def sales_create_ticket(company_cen):
         
         id = execute('''
             INSERT INTO tickets (mesero, estado, tasa_impuesto, cen, code)
-            VALUES (?, 'abierto', ?, ?, ?)
+            VALUES (%s, 'abierto', %s, %s, %s)
         ''', (mesero, tasa_impuesto, new_cen, new_code))
         
         return jsonify({
@@ -127,10 +127,10 @@ def sales_get_ticket_detail(company_cen, ticket_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        t = query("SELECT * FROM tickets WHERE cen = ?", (ticket_cen,), fetch='one')
+        t = query("SELECT * FROM tickets WHERE cen = %s", (ticket_cen,), fetch='one')
         if not t: return jsonify({'error': 'Ticket not found'}), 404
         
-        item_count = query("SELECT SUM(cantidad) as qty FROM ticket_items WHERE ticket_id = ?", (t['id'],), fetch='one')['qty'] or 0
+        item_count = query("SELECT SUM(cantidad) as qty FROM ticket_items WHERE ticket_id = %s", (t['id'],), fetch='one')['qty'] or 0
         map_status = {'abierto': 'OPEN', 'pagado': 'PAID', 'cancelado': 'CANCELLED'}
         
         return jsonify({
@@ -138,9 +138,9 @@ def sales_get_ticket_detail(company_cen, ticket_cen):
             'ticketNumber': t['code'] or f"TIC-{t['id']:05d}",
             'status': map_status.get(t['estado'], 'OPEN'),
             'itemCount': item_count,
-            'createdAt': t['creado_en'],
+            'createdAt': t['creado_en'].isoformat() if hasattr(t['creado_en'], 'isoformat') else str(t['creado_en']),
             'mesero': t['mesero'],
-            'total': t['total']
+            'total': float(t['total'])
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -151,14 +151,14 @@ def sales_get_ticket_items(company_cen, ticket_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        t = query("SELECT id FROM tickets WHERE cen = ?", (ticket_cen,), fetch='one')
+        t = query("SELECT id FROM tickets WHERE cen = %s", (ticket_cen,), fetch='one')
         if not t: return jsonify({'error': 'Ticket not found'}), 404
         
         items = query('''
             SELECT ti.*, p.cen as product_cen, p.code as product_code, p.nombre as product_name
             FROM ticket_items ti
             JOIN productos p ON p.id = ti.producto_id
-            WHERE ti.ticket_id = ?
+            WHERE ti.ticket_id = %s
             ORDER BY ti.id ASC
         ''', (t['id'],))
         
@@ -168,7 +168,7 @@ def sales_get_ticket_items(company_cen, ticket_cen):
             'productCode': item['product_code'],
             'productName': item['product_name'],
             'quantity': item['cantidad'],
-            'unitPrice': item['precio_unitario'],
+            'unitPrice': float(item['precio_unitario']),
             'notes': item['nota'] or ''
         } for item in items])
     except Exception as e:
@@ -180,14 +180,14 @@ def sales_get_ticket_totals(company_cen, ticket_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        t = query("SELECT subtotal, impuesto, total, tasa_impuesto FROM tickets WHERE cen = ?", (ticket_cen,), fetch='one')
+        t = query("SELECT subtotal, impuesto, total, tasa_impuesto FROM tickets WHERE cen = %s", (ticket_cen,), fetch='one')
         if not t: return jsonify({'error': 'Ticket not found'}), 404
         
         return jsonify({
-            'subtotal': t['subtotal'],
-            'tax': t['impuesto'],
-            'total': t['total'],
-            'taxRate': t['tasa_impuesto']
+            'subtotal': float(t['subtotal']),
+            'tax': float(t['impuesto']),
+            'total': float(t['total']),
+            'taxRate': float(t['tasa_impuesto'])
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -198,7 +198,7 @@ def sales_add_ticket_item(company_cen, ticket_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        t = query("SELECT id, estado FROM tickets WHERE cen = ?", (ticket_cen,), fetch='one')
+        t = query("SELECT id, estado FROM tickets WHERE cen = %s", (ticket_cen,), fetch='one')
         if not t: return jsonify({'error': 'Ticket not found'}), 404
         
         if t['estado'] != 'abierto':
@@ -221,26 +221,26 @@ def sales_add_ticket_item(company_cen, ticket_cen):
         if not has_stock:
             return jsonify({'error': 'Stock insuficiente en inventario'}), 400
             
-        subtotal = prod['precio'] * qty
+        subtotal = float(prod['precio']) * qty
         new_cen = str(uuid.uuid4())
         
         execute('''
             INSERT INTO ticket_items (ticket_id, producto_id, cantidad, precio_unitario, subtotal, nota, cen)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         ''', (t['id'], prod['id'], qty, prod['precio'], subtotal, notes, new_cen))
         
-        updated_t = query("SELECT subtotal, impuesto, total FROM tickets WHERE id = ?", (t['id'],), fetch='one')
+        updated_t = query("SELECT subtotal, impuesto, total FROM tickets WHERE id = %s", (t['id'],), fetch='one')
         
         return jsonify({
             'cen': new_cen,
             'productCen': product_cen,
             'quantity': qty,
-            'unitPrice': prod['precio'],
+            'unitPrice': float(prod['precio']),
             'notes': notes,
             'ticket_totals': {
-                'subtotal': updated_t['subtotal'],
-                'impuesto': updated_t['impuesto'],
-                'total': updated_t['total']
+                'subtotal': float(updated_t['subtotal']),
+                'impuesto': float(updated_t['impuesto']),
+                'total': float(updated_t['total'])
             }
         }), 201
     except Exception as e:
@@ -252,13 +252,13 @@ def sales_update_ticket_item(company_cen, ticket_cen, item_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        t = query("SELECT id, estado FROM tickets WHERE cen = ?", (ticket_cen,), fetch='one')
+        t = query("SELECT id, estado FROM tickets WHERE cen = %s", (ticket_cen,), fetch='one')
         if not t: return jsonify({'error': 'Ticket not found'}), 404
         
         if t['estado'] != 'abierto':
             return jsonify({'error': 'Cannot edit items on a closed ticket'}), 400
             
-        item = query("SELECT * FROM ticket_items WHERE cen = ? AND ticket_id = ?", (item_cen, t['id']), fetch='one')
+        item = query("SELECT * FROM ticket_items WHERE cen = %s AND ticket_id = %s", (item_cen, t['id']), fetch='one')
         if not item: return jsonify({'error': 'Ticket item not found'}), 404
         
         data = request.get_json() or {}
@@ -272,7 +272,7 @@ def sales_update_ticket_item(company_cen, ticket_cen, item_cen):
             if qty <= 0: return jsonify({'error': 'Quantity must be greater than 0'}), 400
             
             # Resolve product cen
-            prod = query("SELECT cen, precio FROM productos WHERE id = ?", (item['producto_id'],), fetch='one')
+            prod = query("SELECT cen, precio FROM productos WHERE id = %s", (item['producto_id'],), fetch='one')
             
             # HTTP stock validation
             from inventory_client import validate_stock
@@ -280,27 +280,27 @@ def sales_update_ticket_item(company_cen, ticket_cen, item_cen):
             if not has_stock:
                 return jsonify({'error': f'Stock insuficiente en inventario'}), 400
                 
-            subtotal = prod['precio'] * qty
-            updates.append("cantidad = ?")
-            updates.append("subtotal = ?")
+            subtotal = float(prod['precio']) * qty
+            updates.append("cantidad = %s")
+            updates.append("subtotal = %s")
             params.extend([qty, subtotal])
             
         if notes is not None:
-            updates.append("nota = ?")
+            updates.append("nota = %s")
             params.append(notes.strip())
             
         if updates:
             params.append(item_cen)
-            execute(f"UPDATE ticket_items SET {', '.join(updates)} WHERE cen = ?", tuple(params))
+            execute(f"UPDATE ticket_items SET {', '.join(updates)} WHERE cen = %s", tuple(params))
             
-        updated_t = query("SELECT subtotal, impuesto, total FROM tickets WHERE id = ?", (t['id'],), fetch='one')
+        updated_t = query("SELECT subtotal, impuesto, total FROM tickets WHERE id = %s", (t['id'],), fetch='one')
         
         return jsonify({
             'cen': item_cen,
             'ticket_totals': {
-                'subtotal': updated_t['subtotal'],
-                'impuesto': updated_t['impuesto'],
-                'total': updated_t['total']
+                'subtotal': float(updated_t['subtotal']),
+                'impuesto': float(updated_t['impuesto']),
+                'total': float(updated_t['total'])
             }
         })
     except Exception as e:
@@ -312,24 +312,24 @@ def sales_delete_ticket_item(company_cen, ticket_cen, item_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        t = query("SELECT id, estado FROM tickets WHERE cen = ?", (ticket_cen,), fetch='one')
+        t = query("SELECT id, estado FROM tickets WHERE cen = %s", (ticket_cen,), fetch='one')
         if not t: return jsonify({'error': 'Ticket not found'}), 404
         
         if t['estado'] != 'abierto':
             return jsonify({'error': 'Cannot delete items from a closed ticket'}), 400
             
-        item = query("SELECT id FROM ticket_items WHERE cen = ? AND ticket_id = ?", (item_cen, t['id']), fetch='one')
+        item = query("SELECT id FROM ticket_items WHERE cen = %s AND ticket_id = %s", (item_cen, t['id']), fetch='one')
         if not item: return jsonify({'error': 'Ticket item not found'}), 404
         
-        execute("DELETE FROM ticket_items WHERE cen = ?", (item_cen,))
+        execute("DELETE FROM ticket_items WHERE cen = %s", (item_cen,))
         
-        updated_t = query("SELECT subtotal, impuesto, total FROM tickets WHERE id = ?", (t['id'],), fetch='one')
+        updated_t = query("SELECT subtotal, impuesto, total FROM tickets WHERE id = %s", (t['id'],), fetch='one')
         
         return jsonify({
             'ticket_totals': {
-                'subtotal': updated_t['subtotal'],
-                'impuesto': updated_t['impuesto'],
-                'total': updated_t['total']
+                'subtotal': float(updated_t['subtotal']),
+                'impuesto': float(updated_t['impuesto']),
+                'total': float(updated_t['total'])
             }
         })
     except Exception as e:
@@ -341,13 +341,13 @@ def sales_cancel_ticket(company_cen, ticket_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        t = query("SELECT id, estado FROM tickets WHERE cen = ?", (ticket_cen,), fetch='one')
+        t = query("SELECT id, estado FROM tickets WHERE cen = %s", (ticket_cen,), fetch='one')
         if not t: return jsonify({'error': 'Ticket not found'}), 404
         
         if t['estado'] != 'abierto':
             return jsonify({'error': 'Only open tickets can be cancelled'}), 400
             
-        execute("UPDATE tickets SET estado = 'cancelado' WHERE cen = ?", (ticket_cen,))
+        execute("UPDATE tickets SET estado = 'cancelado' WHERE cen = %s", (ticket_cen,))
         return jsonify({'status': 'CANCELLED'})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -358,7 +358,7 @@ def sales_pay_ticket(company_cen, ticket_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        t = query("SELECT id, estado, total FROM tickets WHERE cen = ?", (ticket_cen,), fetch='one')
+        t = query("SELECT id, estado, total FROM tickets WHERE cen = %s", (ticket_cen,), fetch='one')
         if not t: return jsonify({'error': 'Ticket not found'}), 404
         
         if t['estado'] != 'abierto':
@@ -368,7 +368,7 @@ def sales_pay_ticket(company_cen, ticket_cen):
             SELECT ti.producto_id, ti.cantidad, p.cen as product_cen, p.nombre
             FROM ticket_items ti
             JOIN productos p ON p.id = ti.producto_id
-            WHERE ti.ticket_id = ?
+            WHERE ti.ticket_id = %s
         ''', (t['id'],))
         
         if not items:
@@ -391,16 +391,16 @@ def sales_pay_ticket(company_cen, ticket_cen):
         new_pago_cen = str(uuid.uuid4())
         execute('''
             INSERT INTO pagos (ticket_id, metodo, monto, cen)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
         ''', (t['id'], mapped_met, amount, new_pago_cen))
         
-        # Set ticket status to PAID explicitly (since SQLite trigger is deleted)
-        execute("UPDATE tickets SET estado = 'pagado', pagado_en = datetime('now') WHERE id = ?", (t['id'],))
+        # Set ticket status to PAID explicitly
+        execute("UPDATE tickets SET estado = 'pagado', pagado_en = CURRENT_TIMESTAMP WHERE id = %s", (t['id'],))
         
         return jsonify({
             'paymentCen': new_pago_cen,
             'status': 'PAID',
-            'amount': amount
+            'amount': float(amount)
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -415,14 +415,14 @@ def sales_send_command(company_cen, ticket_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        t = query("SELECT id FROM tickets WHERE cen = ?", (ticket_cen,), fetch='one')
+        t = query("SELECT id FROM tickets WHERE cen = %s", (ticket_cen,), fetch='one')
         if not t: return jsonify({'error': 'Ticket not found'}), 404
         
         items_sin_enviar = query('''
             SELECT ti.id, ti.producto_id, ti.cantidad, p.station_code, p.nombre, ti.nota, ti.cen
             FROM ticket_items ti
             JOIN productos p ON p.id = ti.producto_id
-            WHERE ti.ticket_id = ? AND ti.id NOT IN (
+            WHERE ti.ticket_id = %s AND ti.id NOT IN (
                 SELECT DISTINCT ticket_item_id FROM comanda_items
             )
         ''', (t['id'],))
@@ -433,7 +433,7 @@ def sales_send_command(company_cen, ticket_cen):
         estaciones_items = {}
         for item in items_sin_enviar:
             st_code = item['station_code'] or 'COCINA'
-            est = query("SELECT id FROM estaciones WHERE UPPER(tipo) = ? OR UPPER(nombre) = ?", (st_code, st_code), fetch='one')
+            est = query("SELECT id FROM estaciones WHERE UPPER(tipo) = %s OR UPPER(nombre) = %s", (st_code, st_code), fetch='one')
             est_id = est['id'] if est else 1
             
             if est_id not in estaciones_items:
@@ -445,14 +445,14 @@ def sales_send_command(company_cen, ticket_cen):
             new_comanda_cen = str(uuid.uuid4())
             comanda_id = execute('''
                 INSERT INTO comandas (ticket_id, estacion_id, es_reenvio, cen)
-                VALUES (?, ?, 0, ?)
+                VALUES (%s, %s, 0, %s)
             ''', (t['id'], est_id, new_comanda_cen))
             
             for item in items:
                 new_item_cen = str(uuid.uuid4())
                 execute('''
                     INSERT INTO comanda_items (comanda_id, ticket_item_id, estado, cen)
-                    VALUES (?, ?, 'pendiente', ?)
+                    VALUES (%s, %s, 'pendiente', %s)
                 ''', (comanda_id, item['id'], new_item_cen))
                 
             comandas_creadas.append({
@@ -489,7 +489,10 @@ def sales_get_kds_items(company_cen, station_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        est = query("SELECT id FROM estaciones WHERE cen = ? OR tipo = ? OR id = ?", (station_cen, station_cen.lower(), station_cen), fetch='one')
+        if station_cen.isdigit():
+            est = query("SELECT id FROM estaciones WHERE cen = %s OR tipo = %s OR id = %s", (station_cen, station_cen.lower(), int(station_cen)), fetch='one')
+        else:
+            est = query("SELECT id FROM estaciones WHERE cen = %s OR tipo = %s", (station_cen, station_cen.lower()), fetch='one')
         if not est: return jsonify({'error': 'Station not found'}), 404
         
         items = query('''
@@ -500,7 +503,7 @@ def sales_get_kds_items(company_cen, station_cen):
             JOIN tickets t ON t.id = co.ticket_id AND t.estado = 'abierto'
             JOIN ticket_items ti ON ti.id = ci.ticket_item_id
             JOIN productos p ON p.id = ti.producto_id
-            WHERE co.estacion_id = ?
+            WHERE co.estacion_id = %s
             ORDER BY co.creado_en ASC, ci.id ASC
         ''', (est['id'],))
         
@@ -515,7 +518,7 @@ def sales_get_kds_items(company_cen, station_cen):
                 'quantity': item['cantidad'],
                 'notes': item['nota'] or '',
                 'status': map_status.get(item['estado'], 'PENDING'),
-                'createdAt': item['creado_en'],
+                'createdAt': item['creado_en'].isoformat() if hasattr(item['creado_en'], 'isoformat') else str(item['creado_en']),
                 'mesero': item['mesero']
             })
         return jsonify(res)
@@ -528,7 +531,7 @@ def sales_update_kds_item_status(company_cen, item_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        item = query("SELECT id, estado FROM comanda_items WHERE cen = ?", (item_cen,), fetch='one')
+        item = query("SELECT id, estado FROM comanda_items WHERE cen = %s", (item_cen,), fetch='one')
         if not item: return jsonify({'error': 'KDS item not found'}), 404
         
         data = request.get_json() or {}
@@ -537,7 +540,7 @@ def sales_update_kds_item_status(company_cen, item_cen):
         map_status = {'PENDING': 'pendiente', 'IN_PROGRESS': 'en_preparacion', 'PREPARING': 'en_preparacion', 'READY': 'listo'}
         mapped = map_status.get(status, 'listo')
         
-        execute("UPDATE comanda_items SET estado = ?, actualizado_en = datetime('now') WHERE cen = ?", (mapped, item_cen))
+        execute("UPDATE comanda_items SET estado = %s, actualizado_en = CURRENT_TIMESTAMP WHERE cen = %s", (mapped, item_cen))
         return jsonify({'status': status})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -553,7 +556,7 @@ def sales_get_tax_config(company_cen):
         if not c: return jsonify({'error': 'Company not found'}), 404
         
         config = query("SELECT tasa_impuesto FROM configuracion WHERE id = 1", fetch='one')
-        return jsonify({'taxRate': config['tasa_impuesto'] if config else 0.13})
+        return jsonify({'taxRate': float(config['tasa_impuesto']) if config else 0.13})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -569,8 +572,8 @@ def sales_update_tax_config(company_cen):
         if tax_rate is None:
             return jsonify({'error': 'taxRate is required'}), 400
             
-        execute("UPDATE configuracion SET tasa_impuesto = ? WHERE id = 1", (tax_rate,))
-        return jsonify({'taxRate': tax_rate})
+        execute("UPDATE configuracion SET tasa_impuesto = %s WHERE id = 1", (tax_rate,))
+        return jsonify({'taxRate': float(tax_rate)})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -582,7 +585,7 @@ def sales_dashboard_daily(company_cen):
         
         ventas_hoy = query('SELECT * FROM v_ventas_hoy', fetch='one')
         total = ventas_hoy['total_vendido'] if (ventas_hoy and ventas_hoy['total_vendido'] is not None) else 0.0
-        return jsonify({'total': round(total, 2)})
+        return jsonify({'total': round(float(total), 2)})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -597,7 +600,7 @@ def sales_dashboard_top_products(company_cen):
             FROM ticket_items ti
             JOIN tickets t ON t.id = ti.ticket_id AND t.estado = 'pagado'
             JOIN productos p ON p.id = ti.producto_id
-            GROUP BY p.id
+            GROUP BY p.id, p.cen
             ORDER BY quantity DESC
             LIMIT 10
         ''')

@@ -1,345 +1,162 @@
-# Guía Técnica de Desarrollo - Restaurante PDV
+# Guía Técnica de Desarrollo - Restaurante PDV (PostgreSQL & Microservicios)
 
-## Arquitectura
+Esta guía documenta los detalles de arquitectura, base de datos y flujos lógicos del sistema Restaurante PDV distribuido.
 
-### Backend (Flask + SQLite)
+---
 
-El backend está estruturado en blueprints de Flask, cada uno manejando un recurso específico:
+## 🏗️ Arquitectura del Sistema
 
-```
-Backend:
-├── app.py          → Inicialización de Flask, CORS, blueprints
-├── database.py     → Conexión SQLite, funciones auxiliares (query, execute)
-├── routes/
-│   ├── categorias.py    → GET, POST, PUT /api/categorias
-│   ├── unidades.py      → GET, POST, PUT /api/unidades
-│   ├── productos.py     → GET, POST, PUT, PATCH /api/productos
-│   ├── inventario.py    → GET /api/inventario, POST /api/inventario/ajuste
-│   ├── tickets.py       → Gestión completa de cuentas (GET, POST, agregar/editar/eliminar items)
-│   ├── comandas.py      → POST /api/tickets/{id}/comanda, GET /api/kds/{estacion}
-│   └── dashboard.py     → GET /api/dashboard, GET/PUT /api/configuracion
-└── schema.sql      → DDL con tablas, triggers, vistas
-```
+El sistema está diseñado bajo una arquitectura de microservicios distribuidos compuesta por tres APIs independientes en Flask que comparten una base de datos centralizada en PostgreSQL dividida en múltiples esquemas lógicos y una interfaz de usuario interactiva construida en React + Vite.
 
-#### Base de Datos
-
-- **Drive**: SQLite (archivo restaurante.db)
-- **Pragmas**: WAL (Write-Ahead Logging) para mejor concurrencia, foreign_keys ON
-- **Triggers**: 3 para cálculo de totales, 1 para descontar stock
-- **Vistas**: 3 vistas para dashboard y reportes
-
-#### Manejo de Errores
-
-Todos los endpoints devuelven:
-- **Success (200-201)**: `{ "data": ... }`
-- **Error (400)**: `{ "error": "mensaje descriptivo" }`
-- **Not Found (404)**: `{ "error": "recurso no encontrado" }`
-
-### Frontend (React + Vite + Tailwind)
-
-Estructura de componentes:
+### 🌐 Ecosistema de Directorios
 
 ```
-Frontend:
-├── App.jsx         → Contiene sidebar y enrutamiento entre páginas
-├── api.js          → Cliente centralizado con funciones async
-├── pages/
-│   ├── Dashboard.jsx   → Métricas, top productos, alertas
-│   ├── Catalogo.jsx    → 4 tabs: Productos, Categorías, Unidades, Config
-│   ├── Inventario.jsx  → Tabla con stock, modal de ajuste
-│   ├── PDV.jsx        → 2 columnas: cuentas + detalle
-│   └── KDS.jsx        → Kitchen Display System (Cocina/Bar)
-├── components/
-│   ├── Toast.jsx       → Notificaciones {tipo, mensaje}
-│   └── Modal.jsx       → Diálogos genéricos con cerrado por Escape
-└── index.css        → Tailwind @tailwind directives
+PDV-Restaurante/
+├── Inventory.Api/              # API de Catálogo e Inventario (Puerto 5143)
+│   ├── app.py                  # Servidor de Flask
+│   ├── database.py             # Capa de datos PostgreSQL y search_path
+│   ├── requirements.txt        # Dependencias de Python
+│   └── routes/                 # Endpoints de productos, categorías y stock
+├── Sales.Api/                  # API de Ventas, KDS y Facturación (Puerto 5074)
+│   ├── app.py                  # Servidor de Flask
+│   ├── database.py             # Capa de datos PostgreSQL y search_path
+│   ├── inventory_client.py     # Cliente HTTP para consultar a Inventory.Api
+│   └── routes/                 # Endpoints de tickets, comandas y reportes
+├── Purchases.Api/              # API de Compras y Proveedores (Puerto 5229)
+│   ├── app.py                  # Servidor de Flask
+│   ├── database.py             # Capa de datos PostgreSQL y search_path
+│   ├── inventory_client.py     # Cliente HTTP para sumar inventario
+│   └── routes/                 # Endpoints de compras y proveedores
+├── database/                   # Recursos de base de datos
+│   ├── postgres_schema.sql     # Script DDL de esquemas, vistas, triggers y semilla para pgAdmin
+│   └── verify_distributed.py   # Suite de pruebas de integración distribuida
+├── frontend/                   # Aplicación Web React + Vite (Puerto 5173)
+├── start.bat                   # Script de arranque para entornos Windows
+└── start.sh                    # Script de arranque para entornos Unix
 ```
 
-## Flujos Principales
+---
 
-### Flujo PDV (Punto de Venta)
+## 🗂️ Diseño de Base de Datos y Esquemas en PostgreSQL
 
-1. Usuario abre PDV.jsx
-2. Carga cuentas abiertas (`getTickets('abierto')`)
-3. Selecciona o crea nueva cuenta
-4. Busca/filtra productos y los agrega (`agregarItem`)
-5. Puede editar cantidad y notas
-6. Al enviar comanda: agrupa items por estación (Cocina/Bar) y crea comandas
-7. Al cobrar: valida stock, crea pago (trigger descuenta stock)
+La base de datos **`pdv_restaurante`** está segmentada en esquemas lógicos para aislar los recursos de cada microservicio pero permitir la comunicación relacional mediante llaves foráneas:
 
-### Flujo KDS (Cocina/Bar)
+### 1. Esquema `public`
+- **`empresas`**: Tabla global de control de empresas asociadas al sistema.
 
-1. KDS.jsx recibe prop `estacion={1 o 2}`
-2. Cada 15 segundos llama `getKDS(estacion)`
-3. Obtiene comandas abiertas con items agrupados
-4. Click en estado del item avanza: pendiente → en_preparacion → listo
-5. Items listos aparecen atenuados
+### 2. Esquema `inventario` (Dominio de `Inventory.Api`)
+- **`categorias`**: Categorías de productos.
+- **`unidades`**: Unidades de medida.
+- **`productos`**: Catálogo físico de productos (precios, stock actual).
+- **`ajustes_stock`**: Auditoría de movimientos de almacén (entrada/salida).
 
-### Flujo Inventario
+### 3. Esquema `ventas` (Dominio de `Sales.Api`)
+- **`configuracion`**: Configuración global de tasas de impuestos (IVA).
+- **`clientes`**: Clientes del negocio.
+- **`tickets`**: Cuentas de ventas creadas.
+- **`ticket_items`**: Ítems añadidos a las cuentas.
+- **`pagos`**: Registro de facturación e ingresos.
+- **`estaciones`**: Puntos de preparación KDS (Cocina/Bar).
+- **`comandas`**: Órdenes enviadas a KDS.
+- **`comanda_items`**: Estado individual de preparación de platillos.
+- **Triggers**: Función y trigger `ventas.update_ticket_totals()` (PL/pgSQL) para recalcular montos al añadir items.
+- **Vistas**: `v_ventas_hoy`, `v_top_productos` y `v_comandas_estado` para dashboard.
 
-1. Obtiene lista de productos con stock
-2. Cada producto tiene badge: verde (≥5), amarillo (1-4), rojo (0/agotado)
-3. Botón "Ajustar" abre modal
-4. POST a `/api/inventario/ajuste` con tipo (entrada/salida), cantidad, motivo
-5. Backend valida que salida no deje stock negativo
-6. Se registra en tabla `ajustes_stock` para auditoría
+### 4. Esquema `compras` (Dominio de `Purchases.Api`)
+- **`proveedores`**: Catálogo de proveedores.
+- **`compras`**: Órdenes de compra de mercadería.
+- **`compra_items`**: Detalle de productos ordenados.
 
-## Validaciones de Negocio
+---
 
-### En Backend
+## 🔄 Resolución Dinámica de Tablas mediante `search_path`
 
-```
-Categorías/Unidades:
-- Nombre único, no duplicar
+Para que el código de las consultas SQL permanezca genérico e intercambiable, cada microservicio define su variable `DB_SEARCH_PATH` en el archivo `.env`. Al establecer una conexión, la capa `database.py` inyecta esta variable en la sesión de PostgreSQL. 
 
-Productos:
-- Precio > 0
-- Categoria_id y Unidad_id deben existir
-- Nombre requerido
+El orden de búsqueda prioriza el esquema local del servicio antes de caer en otros esquemas:
+- **Inventory.Api**: `search_path=inventario,public`
+- **Sales.Api**: `search_path=ventas,inventario,public` (resuelve tablas de ventas, lee productos de inventario y empresas de public).
+- **Purchases.Api**: `search_path=compras,inventario,public` (resuelve compras, lee productos de inventario y empresas de public).
 
-Tickets/Items:
-- No agregar producto inactivo o agotado
-- No agregar si stock insuficiente
-- No pagar ticket vacío
-- No pagar si stock insuficiente
-- No editar items de ticket pagado/cancelado
+---
 
-Inventario:
-- Salida no puede dejar stock negativo
+## ⚙️ Flujos de Comunicación y Negocio
 
-Pagos:
-- Método debe ser uno de: efectivo, qr, tarjeta
-- Monto debe ser > 0
-```
-
-### En Frontend
-
-```
-Todos los formularios validan antes de enviar:
-- Campos requeridos
-- Tipos de datos correctos
-- Restricciones lógicas (ej: cantidad > 0)
-```
-
-## Triggers SQL
-
-### `trg_totales_insert`, `trg_totales_update`, `trg_totales_delete`
-
-Recalculan automáticamente:
-- `subtotal`: SUM(ticket_items.subtotal)
-- `impuesto`: subtotal * tasa_impuesto
-- `total`: subtotal * (1 + tasa_impuesto)
-
-### `trg_descontar_stock`
-
-Después de insertar pago:
-- Descuenta cantidad de cada producto
-- Marca ticket como 'pagado'
-- Registra `pagado_en`
-
-## API REST
-
-### Categorías
-```
-GET    /api/categorias
-POST   /api/categorias               { nombre }
-PUT    /api/categorias/<id>          { nombre }
+### 1. Registro de Venta con Validación de Stock
+```mermaid
+sequenceDiagram
+    participant FE as Frontend (React)
+    participant SA as Sales.Api
+    participant IA as Inventory.Api
+    participant DB as PostgreSQL (ventas/inventario)
+    
+    FE->>SA: POST /api/sales/companies/.../tickets/{cen}/items (cantidad=2)
+    Note over SA: ensure_local_product()
+    SA->>IA: HTTP GET /api/inventory/companies/.../products/lookup
+    IA-->>SA: Detalles del producto
+    Note over SA: validate_stock()
+    SA->>IA: HTTP POST /api/inventory/companies/.../stock/validate (cantidad=2)
+    IA->>DB: query stock de inventario.productos
+    DB-->>IA: stock disponible (ej: 20)
+    IA-->>SA: Stock disponible = True
+    SA->>DB: INSERT INTO ventas.ticket_items
+    Note over DB: Trigger recalculates ticket totals
+    SA-->>FE: Item agregado con totales actualizados
 ```
 
-### Unidades
-```
-GET    /api/unidades
-POST   /api/unidades                 { nombre }
-PUT    /api/unidades/<id>            { nombre }
-```
-
-### Productos
-```
-GET    /api/productos?categoria_id=&activo=&buscar=
-POST   /api/productos                { nombre, categoria_id, unidad_id, precio, stock }
-PUT    /api/productos/<id>           { nombre, precio, stock, ... }
-PATCH  /api/productos/<id>/toggle-activo
-PATCH  /api/productos/<id>/toggle-agotado
-```
-
-### Inventario
-```
-GET    /api/inventario
-POST   /api/inventario/ajuste        { producto_id, tipo, cantidad, motivo }
-```
-
-### Tickets
-```
-GET    /api/tickets?estado=abierto|pagado|cancelado
-POST   /api/tickets                  { mesero, cliente_id? }
-GET    /api/tickets/<id>
-POST   /api/tickets/<id>/items       { producto_id, cantidad, nota? }
-PUT    /api/tickets/<id>/items/<item_id>  { cantidad?, nota? }
-DELETE /api/tickets/<id>/items/<item_id>
-PATCH  /api/tickets/<id>/cancelar
-POST   /api/tickets/<id>/pagar       { metodo }
-POST   /api/tickets/<id>/comanda     { es_reenvio? }
+### 2. Confirmación de Pago y Descuento de Stock
+```mermaid
+sequenceDiagram
+    participant FE as Frontend (React)
+    participant SA as Sales.Api
+    participant IA as Inventory.Api
+    participant DB as PostgreSQL (ventas/inventario)
+    
+    FE->>SA: POST /api/sales/companies/.../tickets/{cen}/payment
+    SA->>DB: query items del ticket
+    DB-->>SA: Lista de productos y cantidades
+    Note over SA: consume_stock()
+    SA->>IA: HTTP POST /api/inventory/companies/.../stock/consume (cantidad=2)
+    IA->>DB: UPDATE inventario.productos SET stock = stock - 2
+    IA->>DB: INSERT INTO inventario.ajustes_stock (motivo='Ticket payment')
+    IA-->>SA: Stock consumido exitosamente
+    SA->>DB: INSERT INTO ventas.pagos
+    SA->>DB: UPDATE ventas.tickets SET estado='pagado'
+    SA-->>FE: Pago confirmado y stock descontado
 ```
 
-### KDS
-```
-GET    /api/kds/<estacion_id>
-PATCH  /api/kds/item/<comanda_item_id>/estado  { estado }
-```
+---
 
-### Dashboard
-```
-GET    /api/dashboard
-GET    /api/configuracion
-PUT    /api/configuracion            { tasa_impuesto }
-```
+## 🧪 Testing y Verificación Distribuida
 
-## Testing
+### Pruebas de Integración con Python
+El script automatizado [verify_distributed.py](database/verify_distributed.py) ejecuta una simulación completa de negocio:
+1. Valida el estado de salud (`/health`) en las 3 APIs.
+2. Recupera e identifica productos y la empresa predeterminada.
+3. Abre un ticket de ventas, asocia un producto por HTTP e inicia el flujo de facturación.
+4. Confirma que el decremento de stock en PostgreSQL se aplique por llamadas cruzadas.
 
-### Con cURL (Backend)
-
+Ejecútalo desde la raíz del proyecto estando los servidores activos:
 ```bash
-# Crear categoría
-curl -X POST http://localhost:5000/api/categorias \
+python database/verify_distributed.py
+```
+
+### Con cURL (Verificación de API)
+```bash
+# Health checks
+curl http://localhost:5143/health
+curl http://localhost:5074/health
+curl http://localhost:5229/health
+
+# Crear categoría (Inventory.Api)
+curl -X POST http://localhost:5143/api/inventory/companies/9f2a4e4e-ac9d-46a4-98ea-412d1c168d12/categories \
   -H "Content-Type: application/json" \
-  -d '{"nombre":"Entradas"}'
-
-# Crear producto
-curl -X POST http://localhost:5000/api/productos \
-  -H "Content-Type: application/json" \
-  -d '{"nombre":"Ceviche","categoria_id":1,"unidad_id":1,"precio":45.0,"stock":10}'
-
-# Crear ticket
-curl -X POST http://localhost:5000/api/tickets \
-  -H "Content-Type: application/json" \
-  -d '{"mesero":"Juan"}'
-
-# Agregar item
-curl -X POST http://localhost:5000/api/tickets/1/items \
-  -H "Content-Type: application/json" \
-  -d '{"producto_id":1,"cantidad":2}'
-
-# Pagar
-curl -X POST http://localhost:5000/api/tickets/1/pagar \
-  -H "Content-Type: application/json" \
-  -d '{"metodo":"efectivo"}'
+  -d '{"name":"Platillos Especiales"}'
 ```
 
-### En Frontend
+---
 
-Abrir DevTools (F12) → Console:
-
-```javascript
-// Test api.js
-import * as api from './src/api.js'
-
-// Listar categorías
-await api.getCategorias()
-
-// Crear ticket
-await api.crearTicket({ mesero: "Juan" })
-
-// Agregar item
-await api.agregarItem(1, { producto_id: 1, cantidad: 2 })
-```
-
-## Performance
-
-- **Base de datos**: WAL mode mejora concurrencia
-- **Frontend**: React memo() en componentes de lista si es necesario
-- **Auto-refresh**: 15 segundos en KDS (configurable)
-- **Llamadas API**: Ejecutan en paralelo donde es posible
-
-## Seguridad
-
-- ✓ SQLite con PRAGMA foreign_keys ON
-- ✓ Validación de todas las entradas en backend
-- ✓ CORS limitado a localhost:5173
-- ✓ Métodos HTTP correctos (GET, POST, PUT, DELETE, PATCH)
-- ⚠ Sin autenticación (sistema local/interno)
-- ⚠ Sin encriptación (sistema local)
-
-Para producción, agregar:
-- Autenticación JWT
-- HTTPS
-- Rate limiting
-- CORS más restrictivo
-- SQL preparedments (actual código ya usa it)
-
-## Datos Iniciales
-
-Se crean automáticamente al iniciar si no existen:
-
-```sql
--- Categorías (5)
-Entradas, Platos principales, Postres, Bebidas, Cócteles
-
--- Unidades (5)
-Porción, Unidad, Vaso, Botella, Plato
-
--- Productos (8)
-Ceviche mixto, Tequeños, Pollo a la brasa, Lomo saltado,
-Suspiro limeño, Chicha morada, Limonada, Pisco sour
-
--- Estaciones (2)
-Cocina, Bar
-
--- Configuración (1)
-tasa_impuesto = 0.13
-```
-
-## Scripts de Utilidad
-
-### Windows
-```batch
-start.bat    # Inicia backend + frontend en 2 ventanas
-```
-
-### Linux/Mac
-```bash
-chmod +x start.sh
-./start.sh   # Inicia backend + frontend
-```
-
-## Troubleshooting
-
-**Backend no inicia:**
-```bash
-cd backend
-pip install -r requirements.txt
-python app.py
-```
-
-**Frontend no carga:**
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-**Base de datos corrupta:**
-```bash
-rm backend/restaurante.db
-python backend/app.py  # Recrea la DB
-```
-
-**Error de CORS:**
-- Asegúrate que frontend corre en `:5173`
-- Backend escucha en `:5000`
-- Verifica `CORS(app, origins=[...])` en app.py
-
-**Puerto en uso:**
-```bash
-# Linux/Mac: cambiar puerto en vite.config.js y app.py
-# Windows: cambiar puerto en app.py (server.port)
-```
-
-## Estado de Completitud
-
-✅ Backend: 100% (7 blueprints, 30+ endpoints)
-✅ Frontend: 100% (5 páginas, 6 componentes)
-✅ Base de datos: 100% (11+ tablas, 4 triggers, 3 vistas)
-✅ Validaciones: 100% (backend + frontend)
-✅ Documentación: Este archivo + README.md
-
-Total: **Listo para producción** (excepto auth)
+## 🔒 Seguridad y Entorno de Producción
+- **CORS**: Habilitado de forma selectiva para orígenes de desarrollo (`http://localhost:5173`, `http://localhost:3000`).
+- **Control de Inyecciones**: Toda consulta SQL utiliza marcadores de posición parametrizados `%s` gestionados por el driver `psycopg2`.
+- **Intercambiabilidad de Módulos**: Al no utilizar SQLite localmente y basar la comunicación en contratos HTTP API, cualquier microservicio puede reemplazarse por una implementación en otro lenguaje (ej. C# .NET o Node.js) sin alterar las demás piezas.
