@@ -1,39 +1,55 @@
 #!/bin/bash
 
 echo "========================================"
-echo "  Restaurante PDV - Inicio del Sistema"
+echo "  Restaurante PDV - Inicio del Sistema (Servicios Distribuidos)"
 echo "========================================"
 echo ""
 
-echo "Iniciando Backend (Flask)..."
-cd backend
-echo "Instalando dependencias..."
+echo "1. Iniciando Inventory.Api (Puerto 5143)..."
+cd Inventory.Api
 pip install -r requirements.txt > /dev/null 2>&1
-echo "Backend iniciando en puerto 5000..."
 python app.py &
-BACKEND_PID=$!
+INV_PID=$!
+cd ..
+
+echo "2. Iniciando Sales.Api (Puerto 5074)..."
+cd Sales.Api
+pip install -r requirements.txt > /dev/null 2>&1
+python app.py &
+SAL_PID=$!
+cd ..
+
+echo "3. Iniciando Purchases.Api (Puerto 5229)..."
+cd Purchases.Api
+pip install -r requirements.txt > /dev/null 2>&1
+python app.py &
+PUR_PID=$!
+cd ..
 
 echo ""
 echo "Esperando 3 segundos..."
 sleep 3
 
 echo ""
-echo "Iniciando Frontend (React + Vite)..."
-cd ../frontend
-echo "Instalando dependencias..."
+echo "4. Iniciando Frontend (React + Vite)..."
+cd frontend
 npm install > /dev/null 2>&1
-echo "Frontend iniciando en puerto 5173..."
 npm run dev &
-FRONTEND_PID=$!
+FRONT_PID=$!
+cd ..
 
 echo ""
 echo "========================================"
 echo "Sistema iniciado!"
 echo ""
-echo "Backend:  http://localhost:5000"
-echo "Frontend: http://localhost:5173"
+echo "Inventario API: http://localhost:5143"
+echo "Ventas API:     http://localhost:5074"
+echo "Compras API:    http://localhost:5229"
+echo "Frontend:       http://localhost:5173"
 echo ""
 echo "Presiona Ctrl+C para detener..."
 echo "========================================"
 
-wait $BACKEND_PID $FRONTEND_PID
+# Handle shutdown
+trap "kill $INV_PID $SAL_PID $PUR_PID $FRONT_PID; exit" INT TERM
+wait

@@ -69,8 +69,8 @@ export default function Catalogo({ showToast }) {
     const formData = new FormData(e.target)
     const data = {
       nombre: formData.get('nombre'),
-      categoria_id: parseInt(formData.get('categoria_id')),
-      unidad_id: parseInt(formData.get('unidad_id')),
+      categoria_id: formData.get('categoria_id'),
+      unidad_id: formData.get('unidad_id'),
       precio: parseFloat(formData.get('precio')),
       stock: parseInt(formData.get('stock'))
     }

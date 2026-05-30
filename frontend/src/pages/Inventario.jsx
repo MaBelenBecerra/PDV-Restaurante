@@ -28,7 +28,7 @@ export default function Inventario({ showToast }) {
     e.preventDefault()
     const formData = new FormData(e.target)
     const data = {
-      producto_id: parseInt(formData.get('producto_id')),
+      producto_id: formData.get('producto_id'),
       tipo: formData.get('tipo'),
       cantidad: parseInt(formData.get('cantidad')),
       motivo: formData.get('motivo')

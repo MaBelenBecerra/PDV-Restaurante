@@ -198,7 +198,7 @@ export default function PDV({ showToast }) {
 
   const filteredProductos = productos.filter(p => {
     if (p.activo === 0 || p.agotado === 1 || p.stock === 0) return false
-    if (filtroCategoria && p.categoria_id !== parseInt(filtroCategoria)) return false
+    if (filtroCategoria && p.categoria_id.toString() !== filtroCategoria.toString()) return false
     if (buscar && !p.nombre.toLowerCase().includes(buscar.toLowerCase())) return false
     return true
   })
