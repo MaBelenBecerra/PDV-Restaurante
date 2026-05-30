@@ -1,0 +1,820 @@
+openapi: 3.0.0
+info:
+  title: PDV Restaurante - API Integrada (Inventario + Ventas)
+  description: |
+    Contrato API entre los sistemas de Inventario y Ventas del PDV Restaurante.
+    Define los endpoints de integración que permite que el módulo de Ventas consulte y consuma stock del módulo de Inventario.
+  version: 1.0.0
+  contact:
+    name: Equipo de Desarrollo
+    email: dev@restaurante-pdv.local
+
+servers:
+  - url: http://localhost:5143
+    description: Inventory.Api (Puerto 5143)
+  - url: http://localhost:5074
+    description: Sales.Api (Puerto 5074)
+
+tags:
+  - name: Inventory - Companies
+    description: Gestión de empresas en el Inventario
+  - name: Inventory - Products
+    description: Catálogo de productos
+  - name: Inventory - Stock
+    description: Validación y consumo de stock (Integración con Ventas)
+  - name: Sales - Tickets
+    description: Creación y gestión de tickets/facturas
+  - name: Sales - Items
+    description: Items de un ticket con integración a Inventario
+  - name: Sales - Payments
+    description: Pagos de tickets
+
+paths:
+  # INVENTORY API - HEALTH
+  /health:
+    get:
+      tags:
+        - Inventory - Health
+      summary: Verificar estado del servicio
+      operationId: getInventoryHealth
+      responses:
+        '200':
+          description: Servicio operativo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: inventory-api
+
+  # INVENTORY API - COMPANIES
+  /api/inventory/companies:
+    get:
+      tags:
+        - Inventory - Companies
+      summary: Listar todas las empresas activas
+      operationId: getCompanies
+      responses:
+        '200':
+          description: Lista de empresas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Company'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/inventory/companies/{company_cen}:
+    get:
+      tags:
+        - Inventory - Companies
+      summary: Obtener detalle de una empresa
+      operationId: getCompanyDetail
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+      responses:
+        '200':
+          description: Detalles de la empresa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # INVENTORY API - PRODUCTS (Lookup)
+  /api/inventory/companies/{company_cen}/products/lookup:
+    post:
+      tags:
+        - Inventory - Products
+      summary: |
+        Buscar múltiples productos por CEN (usado por Ventas)
+        Endpoint integración: Ventas llama a este para obtener datos de productos.
+      operationId: lookupProducts
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - productCens
+              properties:
+                productCens:
+                  type: array
+                  description: Lista de CEN de productos a buscar
+                  example:
+                    - 550e8400-e29b-41d4-a716-446655440000
+                    - 550e8400-e29b-41d4-a716-446655440001
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Información de productos encontrados
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # INVENTORY API - STOCK (Integración con Ventas)
+  /api/inventory/companies/{company_cen}/stock/validate:
+    post:
+      tags:
+        - Inventory - Stock
+      summary: |
+        Validar si un producto tiene stock suficiente (Integración Ventas)
+        Endpoint integración: Ventas valida stock ANTES de agregar item a ticket.
+      operationId: validateStock
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - productCen
+                - quantity
+              properties:
+                productCen:
+                  type: string
+                  description: CEN del producto a validar
+                  example: 550e8400-e29b-41d4-a716-446655440000
+                quantity:
+                  type: integer
+                  description: Cantidad requerida
+                  example: 2
+      responses:
+        '200':
+          description: Estado de disponibilidad
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - available
+                  - quantity
+                properties:
+                  available:
+                    type: boolean
+                    description: True si hay stock suficiente
+                    example: true
+                  quantity:
+                    type: integer
+                    description: Stock actual del producto
+                    example: 10
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/inventory/companies/{company_cen}/stock/consume:
+    post:
+      tags:
+        - Inventory - Stock
+      summary: |
+        Consumir (descontar) stock de un producto (Integración Ventas)
+        Endpoint integración: Ventas llama a este cuando se PAGA un ticket.
+        IMPORTANTE: Este endpoint solo se invoca tras validar stock previamente.
+      operationId: consumeStock
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - productCen
+                - quantity
+              properties:
+                productCen:
+                  type: string
+                  description: CEN del producto a descontar
+                  example: 550e8400-e29b-41d4-a716-446655440000
+                quantity:
+                  type: integer
+                  description: Cantidad a consumir
+                  example: 2
+                reference:
+                  type: string
+                  description: Referencia del consumo (ej. SALES, AJUSTE)
+                  example: SALES
+                notes:
+                  type: string
+                  description: Notas del consumo
+                  example: "Ticket TIC-00123 pago efectivo"
+      responses:
+        '200':
+          description: Stock consumido exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Stock consumed successfully
+                  newStock:
+                    type: integer
+                    example: 8
+        '404':
+          description: Producto no encontrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Product not found
+        '409':
+          description: Stock insuficiente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Insufficient stock
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/inventory/companies/{company_cen}/stock:
+    get:
+      tags:
+        - Inventory - Stock
+      summary: Obtener stock de todos los productos
+      operationId: getStock
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+      responses:
+        '200':
+          description: Stock de todos los productos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    productCen:
+                      type: string
+                    productCode:
+                      type: string
+                    quantity:
+                      type: integer
+                    minQuantity:
+                      type: integer
+                    lowStock:
+                      type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # SALES API - HEALTH
+  /health:
+    get:
+      tags:
+        - Sales - Health
+      summary: Verificar estado del servicio
+      operationId: getSalesHealth
+      responses:
+        '200':
+          description: Servicio operativo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: sales-api
+
+  # SALES API - TICKETS
+  /api/sales/companies/{company_cen}/tickets:
+    get:
+      tags:
+        - Sales - Tickets
+      summary: Listar tickets con filtro opcional por estado
+      operationId: getTickets
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+        - name: status
+          in: query
+          description: Filtrar por estado (OPEN, PAID, CANCELLED)
+          schema:
+            type: string
+            enum: [OPEN, PAID, CANCELLED]
+      responses:
+        '200':
+          description: Lista de tickets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+    post:
+      tags:
+        - Sales - Tickets
+      summary: Crear nuevo ticket
+      operationId: createTicket
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mesero:
+                  type: string
+                  description: Nombre del mesero (opcional)
+                  example: Juan Pérez
+      responses:
+        '201':
+          description: Ticket creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/sales/companies/{company_cen}/tickets/{ticket_cen}:
+    get:
+      tags:
+        - Sales - Tickets
+      summary: Obtener detalle de un ticket
+      operationId: getTicketDetail
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+        - $ref: '#/components/parameters/TicketCen'
+      responses:
+        '200':
+          description: Detalle del ticket
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/sales/companies/{company_cen}/tickets/{ticket_cen}/cancel:
+    post:
+      tags:
+        - Sales - Tickets
+      summary: Cancelar un ticket abierto
+      operationId: cancelTicket
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+        - $ref: '#/components/parameters/TicketCen'
+      responses:
+        '200':
+          description: Ticket cancelado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: CANCELLED
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # SALES API - ITEMS (Integración Inventario)
+  /api/sales/companies/{company_cen}/tickets/{ticket_cen}/items:
+    get:
+      tags:
+        - Sales - Items
+      summary: Listar items de un ticket
+      operationId: getTicketItems
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+        - $ref: '#/components/parameters/TicketCen'
+      responses:
+        '200':
+          description: Items del ticket
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+    post:
+      tags:
+        - Sales - Items
+      summary: |
+        Agregar item a un ticket (Validación Inventario)
+        IMPORTANTE: Este endpoint valida stock con Inventory.Api ANTES de agregar.
+      operationId: addTicketItem
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+        - $ref: '#/components/parameters/TicketCen'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - productCen
+                - quantity
+              properties:
+                productCen:
+                  type: string
+                  description: CEN del producto a agregar
+                  example: 550e8400-e29b-41d4-a716-446655440000
+                quantity:
+                  type: integer
+                  description: Cantidad a agregar
+                  example: 2
+                notes:
+                  type: string
+                  description: Notas del item
+                  example: Sin cebolla
+      responses:
+        '201':
+          description: Item agregado al ticket
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketItemResponse'
+        '404':
+          description: Producto no encontrado o sin stock
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Product not found in inventory
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/sales/companies/{company_cen}/tickets/{ticket_cen}/items/{item_cen}:
+    patch:
+      tags:
+        - Sales - Items
+      summary: |
+        Actualizar cantidad de un item (Revalidación Inventario)
+        Valida nuevamente con Inventory.Api.
+      operationId: updateTicketItem
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+        - $ref: '#/components/parameters/TicketCen'
+        - $ref: '#/components/parameters/ItemCen'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quantity:
+                  type: integer
+                  description: Nueva cantidad
+                  example: 3
+                notes:
+                  type: string
+                  description: Nuevas notas
+      responses:
+        '200':
+          description: Item actualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cen:
+                    type: string
+                  ticket_totals:
+                    $ref: '#/components/schemas/TicketTotals'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+    delete:
+      tags:
+        - Sales - Items
+      summary: Eliminar un item del ticket
+      operationId: deleteTicketItem
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+        - $ref: '#/components/parameters/TicketCen'
+        - $ref: '#/components/parameters/ItemCen'
+      responses:
+        '200':
+          description: Item eliminado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket_totals:
+                    $ref: '#/components/schemas/TicketTotals'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/sales/companies/{company_cen}/tickets/{ticket_cen}/totals:
+    get:
+      tags:
+        - Sales - Tickets
+      summary: Obtener totales de un ticket
+      operationId: getTicketTotals
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+        - $ref: '#/components/parameters/TicketCen'
+      responses:
+        '200':
+          description: Totales del ticket
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketTotals'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # ========================================
+  # SALES API - PAYMENTS (Consumo Stock)
+  # ========================================
+  /api/sales/companies/{company_cen}/tickets/{ticket_cen}/payment:
+    post:
+      tags:
+        - Sales - Payments
+      summary: |
+        Procesar pago de un ticket (CONSUMO DE STOCK)
+        IMPORTANTE: Este endpoint llama a Inventory.Api/stock/consume para cada item.
+        Si algún descuento falla, revierte todo.
+      operationId: payTicket
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+        - $ref: '#/components/parameters/TicketCen'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - paymentMethod
+              properties:
+                paymentMethod:
+                  type: string
+                  enum: [CASH, QR, CARD, CREDIT_CARD]
+                  description: Método de pago
+                  example: CASH
+                amount:
+                  type: number
+                  description: Monto pagado (opcional, por defecto total del ticket)
+                  example: 100.00
+      responses:
+        '200':
+          description: Pago procesado, stock consumido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  paymentCen:
+                    type: string
+                  status:
+                    type: string
+                    example: PAID
+                  amount:
+                    type: number
+        '400':
+          description: Error en procesamiento o stock insuficiente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Stock insuficiente en inventario para Agua
+        '409':
+          description: Conflicto (ticket no abierto, etc)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+components:
+  schemas:
+    Company:
+      type: object
+      required:
+        - cen
+        - name
+        - nit
+        - active
+      properties:
+        cen:
+          type: string
+          description: CEN (identificador único GUID)
+          example: 550e8400-e29b-41d4-a716-446655440000
+        name:
+          type: string
+          description: Nombre de la empresa
+          example: Restaurant La Cocina
+        nit:
+          type: string
+          description: NIT de la empresa
+          example: "20123456789"
+        active:
+          type: boolean
+          example: true
+
+    ProductDetail:
+      type: object
+      properties:
+        cen:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+        code:
+          type: string
+          example: PROD-00001
+        name:
+          type: string
+          example: Agua mineral 500ml
+        price:
+          type: number
+          format: float
+          example: 2.50
+        stock:
+          type: integer
+          example: 50
+        stationCode:
+          type: string
+          example: COCINA
+
+    TicketSummary:
+      type: object
+      properties:
+        cen:
+          type: string
+        ticketNumber:
+          type: string
+          example: TIC-00123
+        status:
+          type: string
+          enum: [OPEN, PAID, CANCELLED]
+        itemCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        mesero:
+          type: string
+        total:
+          type: number
+
+    TicketDetail:
+      type: object
+      properties:
+        cen:
+          type: string
+        ticketNumber:
+          type: string
+        status:
+          type: string
+          enum: [OPEN, PAID, CANCELLED]
+        itemCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        mesero:
+          type: string
+        total:
+          type: number
+
+    TicketItem:
+      type: object
+      properties:
+        cen:
+          type: string
+        productCen:
+          type: string
+        productCode:
+          type: string
+        productName:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          type: number
+        notes:
+          type: string
+
+    TicketItemResponse:
+      type: object
+      properties:
+        cen:
+          type: string
+        productCen:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          type: number
+        notes:
+          type: string
+        ticket_totals:
+          $ref: '#/components/schemas/TicketTotals'
+
+    TicketTotals:
+      type: object
+      properties:
+        subtotal:
+          type: number
+          example: 100.00
+        tax:
+          type: number
+          example: 13.00
+        total:
+          type: number
+          example: 113.00
+        taxRate:
+          type: number
+          example: 0.13
+
+  parameters:
+    CompanyCen:
+      name: company_cen
+      in: path
+      description: CEN (GUID) de la empresa
+      required: true
+      schema:
+        type: string
+
+    TicketCen:
+      name: ticket_cen
+      in: path
+      description: CEN (GUID) del ticket
+      required: true
+      schema:
+        type: string
+
+    ItemCen:
+      name: item_cen
+      in: path
+      description: CEN (GUID) del item
+      required: true
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Solicitud inválida
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+
+    NotFound:
+      description: Recurso no encontrado
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Not found
