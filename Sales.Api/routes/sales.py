@@ -517,21 +517,26 @@ def sales_get_kds_items(company_cen, station_cen):
             ORDER BY co.creado_en ASC, ci.id ASC
         ''', (est['id'],))
         
-        res = []
+        grouped = {}
         map_status = {'pendiente': 'PENDING', 'en_preparacion': 'IN_PROGRESS', 'listo': 'READY'}
         for item in items:
-            res.append({
-                'cen': item['item_cen'],
-                'ticketCen': item['ticket_cen'],
-                'productCen': item['product_cen'],
-                'productName': item['product_name'],
-                'quantity': item['cantidad'],
-                'notes': item['nota'] or '',
-                'status': map_status.get(item['estado'], 'PENDING'),
-                'createdAt': item['creado_en'].isoformat() if hasattr(item['creado_en'], 'isoformat') else str(item['creado_en']),
-                'mesero': item['mesero']
+            com_cen = item['comanda_cen']
+            if com_cen not in grouped:
+                grouped[com_cen] = {
+                    'id': com_cen,
+                    'ticketId': item['ticket_cen'],
+                    'fechaEnvio': item['creado_en'].isoformat() if hasattr(item['creado_en'], 'isoformat') else str(item['creado_en']),
+                    'mesero': item['mesero'] or 'Mesero',
+                    'items': []
+                }
+            grouped[com_cen]['items'].append({
+                'id': item['item_cen'],
+                'producto': item['product_cen'],
+                'cantidad': item['cantidad'],
+                'estado': map_status.get(item['estado'], 'PENDING'),
+                'nota': item['nota'] or ''
             })
-        return jsonify(res)
+        return jsonify(list(grouped.values()))
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -636,3 +641,118 @@ def sales_dashboard_kds_status(company_cen):
         } for row in comandas_estado])
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+# ==========================================
+# 3. ADDED CONTRACT ENDPOINTS
+# ==========================================
+
+@bp.route('/api/sales/companies/<company_cen>/catalog/products', methods=['GET'])
+def sales_get_catalog_products(company_cen):
+    try:
+        search = request.args.get('search')
+        category_cen = request.args.get('categoryCen')
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('pageSize', 20))
+        
+        # Call downstream client
+        from inventory_client import get_sellable_products
+        products = get_sellable_products(company_cen, search, category_cen, page, page_size)
+        return jsonify(products)
+    except DownstreamServiceError as e:
+        return jsonify({'error': str(e)}), e.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@bp.route('/api/sales/payment-methods', methods=['GET'])
+def sales_payment_methods():
+    return jsonify(["CASH", "CARD", "TRANSFER", "QR"])
+
+@bp.route('/api/sales/companies/<company_cen>/tickets/<ticket_cen>/items/<ticket_item_cen>/resend', methods=['POST'])
+def sales_resend_ticket_item(company_cen, ticket_cen, ticket_item_cen):
+    try:
+        c = get_company(company_cen)
+        if not c: return jsonify({'error': 'Company not found'}), 404
+        
+        # Check if the ticket item exists
+        item = query("SELECT id FROM ticket_items WHERE cen = %s", (ticket_item_cen,), fetch='one')
+        if not item: return jsonify({'error': 'Ticket item not found'}), 404
+        
+        # Check if it has comanda_items
+        c_item = query("SELECT id FROM comanda_items WHERE ticket_item_id = %s", (item['id'],), fetch='one')
+        if not c_item:
+            return jsonify({'error': 'Item was never sent to KDS'}), 400
+            
+        # Update status back to 'pendiente'
+        execute("UPDATE comanda_items SET estado = 'pendiente', actualizado_en = CURRENT_TIMESTAMP WHERE ticket_item_id = %s", (item['id'],))
+        
+        return jsonify({
+            'ticketItemCen': ticket_item_cen,
+            'status': 'PENDING'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@bp.route('/api/sales/companies/<company_cen>/tickets/<ticket_cen>/waiter', methods=['PUT'])
+def sales_assign_waiter(company_cen, ticket_cen):
+    try:
+        c = get_company(company_cen)
+        if not c: return jsonify({'error': 'Company not found'}), 404
+        
+        t = query("SELECT id FROM tickets WHERE cen = %s", (ticket_cen,), fetch='one')
+        if not t: return jsonify({'error': 'Ticket not found'}), 404
+        
+        data = request.get_json() or {}
+        waiter_cen = data.get('waiterCen')
+        
+        if not waiter_cen:
+            return jsonify({'error': 'waiterCen is required'}), 400
+            
+        # Check if waiter exists
+        waiter = query("SELECT nombre FROM meseros WHERE cen = %s AND activo = 1", (waiter_cen,), fetch='one')
+        if not waiter:
+            return jsonify({'error': 'Waiter not found'}), 404
+            
+        # Update ticket vendor_cen and mesero fields
+        execute("UPDATE tickets SET vendor_cen = %s, mesero = %s WHERE id = %s", (waiter_cen, waiter['nombre'], t['id']))
+        
+        return jsonify({
+            'ticketCen': ticket_cen,
+            'waiterCen': waiter_cen,
+            'waiterName': waiter['nombre']
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@bp.route('/api/sales/companies/<company_cen>/waiters', methods=['GET'])
+def sales_get_waiters(company_cen):
+    try:
+        c = get_company(company_cen)
+        if not c: return jsonify({'error': 'Company not found'}), 404
+        
+        waiters = query("SELECT cen, nombre, email, telefono FROM meseros WHERE activo = 1 ORDER BY nombre ASC")
+        return jsonify([{
+            'waiterCen': w['cen'],
+            'name': w['nombre'],
+            'email': w['email'] or '',
+            'phone': w['telefono'] or ''
+        } for w in waiters])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@bp.route('/api/sales/companies/<company_cen>/tickets/<ticket_cen>/print', methods=['GET'])
+def sales_print_ticket(company_cen, ticket_cen):
+    try:
+        c = get_company(company_cen)
+        if not c: return jsonify({'error': 'Company not found'}), 404
+        
+        t = query("SELECT cen, code, estado FROM tickets WHERE cen = %s", (ticket_cen,), fetch='one')
+        if not t: return jsonify({'error': 'Ticket not found'}), 404
+        
+        return jsonify({
+            'ticketCen': t['cen'],
+            'ticketNumber': t['code'],
+            'status': t['estado'].upper()
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+

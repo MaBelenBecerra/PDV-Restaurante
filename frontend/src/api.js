@@ -473,6 +473,28 @@ export async function getKDS(estacionId) {
   const stationCen = targetStation ? targetStation.cen : estacionId
   const res = await apiCall(`/sales/companies/${companyCen}/kds/teams/${stationCen}/items`)
   
+  if (res && res.length > 0 && res[0].items !== undefined) {
+    const products = await getProductos()
+    return res.map(comanda => {
+      return {
+        comanda_id: comanda.id,
+        ticket_id: comanda.ticketId,
+        mesero: comanda.mesero || 'Mesero',
+        hora: comanda.fechaEnvio,
+        items: comanda.items.map(i => {
+          const p = products.find(prod => prod.id === i.producto) || {}
+          return {
+            id: i.id,
+            nombre: p.nombre || i.producto,
+            cantidad: i.cantidad,
+            nota: i.nota,
+            estado: i.estado === 'PENDING' ? 'pendiente' : i.estado === 'IN_PROGRESS' ? 'en_preparacion' : 'listo'
+          }
+        })
+      }
+    })
+  }
+
   const comandasGrouped = {}
   for (const item of res) {
     const ticketId = item.ticketCen

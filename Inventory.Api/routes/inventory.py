@@ -704,3 +704,183 @@ def inventory_dashboard(company_cen):
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+# ==========================================
+# 7. ADDED CONTRACT ENDPOINTS
+# ==========================================
+
+@bp.route('/api/inventory/companies/<company_cen>/warehouses', methods=['GET'])
+def get_warehouses(company_cen):
+    try:
+        c = get_company(company_cen)
+        if not c: return jsonify({'error': 'Company not found'}), 404
+        
+        warehouses = query("SELECT cen, nombre, activo FROM bodegas ORDER BY nombre ASC")
+        return jsonify([{
+            'warehouseCen': w['cen'],
+            'name': w['nombre'],
+            'isActive': bool(w['activo'])
+        } for w in warehouses])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@bp.route('/api/inventory/companies/<company_cen>/documents', methods=['GET'])
+def get_documents(company_cen):
+    try:
+        c = get_company(company_cen)
+        if not c: return jsonify({'error': 'Company not found'}), 404
+        
+        doc_type = request.args.get('documentType')
+        from_date = request.args.get('from')
+        to_date = request.args.get('to')
+        
+        sql = "SELECT d.*, (SELECT COALESCE(SUM(cantidad), 0) FROM documentos_items WHERE documento_id = d.id) as total_items FROM documentos d WHERE 1=1"
+        params = []
+        if doc_type:
+            sql += " AND d.tipo = %s"
+            params.append(doc_type)
+        if from_date:
+            sql += " AND d.creado_en >= %s"
+            params.append(from_date)
+        if to_date:
+            sql += " AND d.creado_en <= %s"
+            params.append(to_date)
+            
+        sql += " ORDER BY d.creado_en DESC"
+        
+        docs = query(sql, tuple(params) if params else None)
+        return jsonify([{
+            'documentCen': d['cen'],
+            'documentType': d['tipo'],
+            'status': d['estado'],
+            'title': f"Documento {d['tipo']} - {d['cen'][:8]}",
+            'createdAt': d['creado_en'].isoformat() if hasattr(d['creado_en'], 'isoformat') else d['creado_en'],
+            'totalItems': float(d['total_items']),
+            'generatedMovementCens': []
+        } for d in docs])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@bp.route('/api/inventory/companies/<company_cen>/documents', methods=['POST'])
+def create_document(company_cen):
+    try:
+        c = get_company(company_cen)
+        if not c: return jsonify({'error': 'Company not found'}), 404
+        
+        data = request.get_json() or {}
+        doc_type = data.get('documentType', 'ADJUSTMENT').upper()
+        warehouse_cen = data.get('warehouseCen') or 'alm-cen-guid-1'
+        reason = data.get('reason', '')
+        ext_ref = data.get('externalReference', '')
+        lines = data.get('lines', [])
+        
+        if not lines:
+            return jsonify({'error': 'Lines are required'}), 400
+            
+        # Create document
+        new_doc_cen = str(uuid.uuid4())
+        doc_id = execute('''
+            INSERT INTO documentos (cen, tipo, estado, referencia, notas, creado_en)
+            VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        ''', (new_doc_cen, doc_type, 'CONFIRMED', ext_ref, reason))
+        
+        movement_cens = []
+        for line in lines:
+            prod_cen = line.get('productCen')
+            qty = line.get('quantity', 0)
+            cost = line.get('unitCost', 0)
+            
+            if not prod_cen or qty == 0:
+                continue
+                
+            prod = query("SELECT id, stock FROM productos WHERE cen = %s", (prod_cen,), fetch='one')
+            if not prod:
+                continue
+                
+            # Save line
+            execute('''
+                INSERT INTO documentos_items (documento_id, producto_cen, cantidad, costo_unitario, creado_en)
+                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ''', (doc_id, prod_cen, qty, cost))
+            
+            # Adjust stock
+            tipo_mov = 'entrada' if qty > 0 else 'salida'
+            abs_qty = abs(qty)
+            
+            # Compatibility with legacy ajustes_stock table
+            execute('''
+                INSERT INTO ajustes_stock (producto_id, tipo, cantidad, motivo, creado_en)
+                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ''', (prod['id'], tipo_mov, abs_qty, f"Doc {doc_type}: {reason}"))
+            
+            if qty > 0:
+                execute("UPDATE productos SET stock = stock + %s WHERE id = %s", (abs_qty, prod['id']))
+            else:
+                execute("UPDATE productos SET stock = stock - %s WHERE id = %s", (abs_qty, prod['id']))
+                
+            # Record in kardex
+            mov_cen = str(uuid.uuid4())
+            movement_cens.append(mov_cen)
+            execute('''
+                INSERT INTO kardex (movimiento_cen, documento_cen, producto_cen, bodega_cen, tipo_movimiento, cantidad, costo_unitario, motivo, creado_en)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ''', (mov_cen, new_doc_cen, prod_cen, warehouse_cen, doc_type, qty, cost, reason))
+            
+        return jsonify({
+            'documentCen': new_doc_cen,
+            'documentType': doc_type,
+            'status': 'CONFIRMED',
+            'title': f"Documento {doc_type} - {new_doc_cen[:8]}",
+            'createdAt': datetime_now_str(),
+            'totalItems': len(lines),
+            'generatedMovementCens': movement_cens
+        }), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@bp.route('/api/inventory/companies/<company_cen>/products/<product_cen>/kardex', methods=['GET'])
+def get_product_kardex(company_cen, product_cen):
+    try:
+        c = get_company(company_cen)
+        if not c: return jsonify({'error': 'Company not found'}), 404
+        
+        prod = query("SELECT id FROM productos WHERE cen = %s", (product_cen,), fetch='one')
+        if not prod: return jsonify({'error': 'Product not found'}), 404
+        
+        movements = query("SELECT * FROM kardex WHERE producto_cen = %s ORDER BY creado_en DESC", (product_cen,))
+        
+        # Fallback to legacy ajustes_stock if kardex is empty
+        if not movements:
+            ajustes = query('''
+                SELECT a.*, p.cen as prod_cen 
+                FROM ajustes_stock a 
+                JOIN productos p ON p.id = a.producto_id 
+                WHERE p.cen = %s 
+                ORDER BY a.creado_en DESC
+            ''', (product_cen,))
+            return jsonify([{
+                'movementCen': f"mov-ajuste-{a['id']}",
+                'documentCen': None,
+                'productCen': a['prod_cen'],
+                'warehouseCen': 'alm-cen-guid-1',
+                'movementType': 'ADJUSTMENT',
+                'quantity': float(a['cantidad']) if a['tipo'] == 'entrada' else -float(a['cantidad']),
+                'unitCost': 0.0,
+                'reason': a['motivo'],
+                'createdAt': a['creado_en'].isoformat() if hasattr(a['creado_en'], 'isoformat') else a['creado_en']
+            } for a in ajustes])
+            
+        return jsonify([{
+            'movementCen': m['movimiento_cen'],
+            'documentCen': m['documento_cen'],
+            'productCen': m['producto_cen'],
+            'warehouseCen': m['bodega_cen'],
+            'movementType': m['tipo_movimiento'],
+            'quantity': float(m['cantidad']),
+            'unitCost': float(m['costo_unitario']) if m['costo_unitario'] is not None else None,
+            'reason': m['motivo'],
+            'createdAt': m['creado_en'].isoformat() if hasattr(m['creado_en'], 'isoformat') else m['creado_en']
+        } for m in movements])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+

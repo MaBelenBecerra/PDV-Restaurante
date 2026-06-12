@@ -56,3 +56,23 @@ def consume_stock(company_cen, product_cen, quantity, notes="Ticket payment"):
     except requests.exceptions.RequestException as e:
         raise DownstreamServiceError("El servicio de inventario no está disponible o no responde", 503)
 
+def get_sellable_products(company_cen, search=None, category_cen=None, page=1, page_size=20):
+    try:
+        url = f"{INVENTORY_API_URL}/api/inventory/companies/{company_cen}/sellable-products"
+        params = {
+            "search": search,
+            "categoryCen": category_cen,
+            "page": page,
+            "pageSize": page_size
+        }
+        res = requests.get(url, params=params, timeout=5)
+        if res.status_code == 200:
+            return res.json()
+        elif res.status_code == 404:
+            raise DownstreamServiceError("Compañía no encontrada en inventario", 404)
+        else:
+            raise DownstreamServiceError(f"Error en el servicio de inventario (HTTP {res.status_code})", 502)
+    except requests.exceptions.RequestException as e:
+        raise DownstreamServiceError("El servicio de inventario no está disponible o no responde", 503)
+
+

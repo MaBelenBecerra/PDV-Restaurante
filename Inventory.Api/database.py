@@ -74,15 +74,86 @@ def execute(sql, params=None):
         conn.close()
 
 def run_migrations():
-    """Schema is managed via pgAdmin SQL script."""
-    pass
+    """Create inventario tables if missing and insert seed data."""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Create bodegas table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bodegas (
+                id SERIAL PRIMARY KEY,
+                cen VARCHAR(50) NOT NULL UNIQUE,
+                nombre VARCHAR(255) NOT NULL,
+                activo INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0,1)),
+                creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        
+        # Seed default bodega
+        cursor.execute("""
+            INSERT INTO bodegas (cen, nombre, activo) 
+            VALUES ('alm-cen-guid-1', 'Almacén principal', 1)
+            ON CONFLICT (cen) DO NOTHING;
+        """)
+        
+        # Create documentos table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS documentos (
+                id SERIAL PRIMARY KEY,
+                cen VARCHAR(50) NOT NULL UNIQUE,
+                tipo VARCHAR(50) NOT NULL,
+                estado VARCHAR(50) NOT NULL DEFAULT 'DRAFT',
+                referencia VARCHAR(255),
+                notas TEXT,
+                creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        
+        # Create documentos_items table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS documentos_items (
+                id SERIAL PRIMARY KEY,
+                documento_id INTEGER NOT NULL REFERENCES documentos(id) ON DELETE CASCADE,
+                producto_cen VARCHAR(50) NOT NULL,
+                cantidad NUMERIC(10,2) NOT NULL,
+                costo_unitario NUMERIC(10,2),
+                notas TEXT,
+                creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        
+        # Create kardex table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS kardex (
+                id SERIAL PRIMARY KEY,
+                movimiento_cen VARCHAR(50) NOT NULL UNIQUE,
+                documento_cen VARCHAR(50),
+                producto_cen VARCHAR(50) NOT NULL,
+                bodega_cen VARCHAR(50) NOT NULL,
+                tipo_movimiento VARCHAR(50) NOT NULL,
+                cantidad NUMERIC(10,2) NOT NULL,
+                costo_unitario NUMERIC(10,2),
+                motivo TEXT,
+                creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        print("Inventory migrations completed successfully.")
+    except Exception as e:
+        print(f"Error running inventory migrations: {e}")
 
 def init_db():
-    """Verify database connection on startup."""
+    """Verify database connection on startup and run migrations."""
     try:
         conn = get_db()
         conn.close()
         print("Database connection verified successfully.")
+        run_migrations()
     except Exception as e:
         print(f"CRITICAL: Failed to connect to database: {e}")
         print("Please ensure PostgreSQL is running and credentials in .env are correct.")
+

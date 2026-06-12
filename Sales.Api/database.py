@@ -74,15 +74,47 @@ def execute(sql, params=None):
         conn.close()
 
 def run_migrations():
-    """Schema is managed via pgAdmin SQL script."""
-    pass
+    """Create sales tables if missing and insert seed data."""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Create meseros table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS meseros (
+                id SERIAL PRIMARY KEY,
+                cen VARCHAR(50) NOT NULL UNIQUE,
+                nombre VARCHAR(255) NOT NULL,
+                email VARCHAR(255),
+                telefono VARCHAR(50),
+                activo INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0,1)),
+                creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        
+        # Seed default waiters
+        cursor.execute("""
+            INSERT INTO meseros (cen, nombre, email, telefono, activo) VALUES
+                ('waiter-cen-guid-1', 'Juan Pérez', 'juan.perez@restaurante.local', '555-0199', 1),
+                ('waiter-cen-guid-2', 'María López', 'maria.lopez@restaurante.local', '555-0188', 1)
+            ON CONFLICT (cen) DO NOTHING;
+        """)
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        print("Sales migrations completed successfully.")
+    except Exception as e:
+        print(f"Error running sales migrations: {e}")
 
 def init_db():
-    """Verify database connection on startup."""
+    """Verify database connection on startup and run migrations."""
     try:
         conn = get_db()
         conn.close()
         print("Database connection verified successfully.")
+        run_migrations()
     except Exception as e:
         print(f"CRITICAL: Failed to connect to database: {e}")
         print("Please ensure PostgreSQL is running and credentials in .env are correct.")
+
