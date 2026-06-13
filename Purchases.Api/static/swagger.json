@@ -3,40 +3,96 @@
   "info": {
     "title": "Purchases API",
     "description": "Microservicio de gestión de compras y proveedores del sistema PDV Restaurante.",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "paths": {
-    "/api/purchases/companies/{company_cen}/orders": {
+    "/api/purchases/companies/{companyCen}/suppliers": {
       "get": {
-        "summary": "Obtener órdenes de compra",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
+        "tags": ["PurchasesContract"],
+        "summary": "Lista proveedores",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": {
-          "200": { "description": "Lista de órdenes." }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/SupplierContractDto" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["PurchasesContract"],
+        "summary": "Crea un proveedor",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateSupplierContractRequest" } } } },
+        "responses": {
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SupplierContractDto" } } } }
         }
       }
     },
-    "/api/purchases/companies/{company_cen}/suppliers": {
-      "get": {
-        "summary": "Listar proveedores",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
+    "/api/purchases/companies/{companyCen}/suppliers/{supplierCen}": {
+      "put": {
+        "tags": ["PurchasesContract"],
+        "summary": "Actualiza un proveedor",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "supplierCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateSupplierContractRequest" } } } },
         "responses": {
-          "200": { "description": "Lista de proveedores." }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SupplierContractDto" } } } }
         }
       }
+    },
+    "/api/purchases/companies/{companyCen}/orders": {
+      "get": {
+        "tags": ["PurchasesContract"],
+        "summary": "Lista órdenes de compra",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PurchaseOrderContractDto" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["PurchasesContract"],
+        "summary": "Crea una orden de compra",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreatePurchaseOrderContractRequest" } } } },
+        "responses": {
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PurchaseOrderContractDto" } } } }
+        }
+      }
+    },
+    "/api/purchases/companies/{companyCen}/orders/{orderCen}": {
+      "get": {
+        "tags": ["PurchasesContract"],
+        "summary": "Obtiene detalle de una orden de compra",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "orderCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PurchaseOrderDetailContractDto" } } } }
+        }
+      },
+      "put": {
+        "tags": ["PurchasesContract"],
+        "summary": "Actualiza una orden de compra",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "orderCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreatePurchaseOrderContractRequest" } } } },
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PurchaseOrderContractDto" } } } }
+        }
+      }
+    },
+    "/api/purchases/companies/{companyCen}/orders/{orderCen}/receive": {
+      "post": {
+        "tags": ["PurchasesContract"],
+        "summary": "Recepciona mercadería (Incrementa stock)",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "orderCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PurchaseOrderContractDto" } } } }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "SupplierContractDto": { "type": "object", "properties": { "supplierCen": { "type": "string" }, "name": { "type": "string" } } },
+      "CreateSupplierContractRequest": { "type": "object", "properties": { "name": { "type": "string" } } },
+      "UpdateSupplierContractRequest": { "type": "object", "properties": { "name": { "type": "string" } } },
+      "PurchaseOrderContractDto": { "type": "object", "properties": { "orderCen": { "type": "string" }, "supplierCen": { "type": "string" }, "warehouseCen": { "type": "string" }, "status": { "type": "string" }, "createdAt": { "type": "string", "format": "date-time" } } },
+      "PurchaseOrderDetailContractDto": { "type": "object", "properties": { "orderCen": { "type": "string" }, "status": { "type": "string" }, "createdAt": { "type": "string", "format": "date-time" }, "supplierCen": { "type": "string" } } },
+      "CreatePurchaseOrderContractRequest": { "type": "object", "properties": { "supplierCen": { "type": "string" }, "warehouseCen": { "type": "string" }, "items": { "type": "array", "items": { "type": "object", "properties": { "productCen": { "type": "string" }, "quantity": { "type": "number" } } } } } }
     }
   }
 }

@@ -3,522 +3,405 @@
   "info": {
     "title": "Inventory API",
     "description": "Microservicio de catálogo de productos, categorías, unidades de medida y gestión de stock del sistema PDV Restaurante.",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "paths": {
     "/api/inventory/companies": {
       "get": {
-        "summary": "Obtener empresas",
-        "description": "Devuelve la lista de empresas activas registradas en el sistema.",
+        "tags": ["InventoryCompaniesContract"],
+        "summary": "Lista empresas del contrato de inventario",
         "responses": {
           "200": {
-            "description": "Lista de empresas obtenida con éxito.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Company"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/inventory/companies/{company_cen}": {
-      "get": {
-        "summary": "Obtener detalle de empresa",
-        "description": "Obtiene la información de una empresa específica por su identificador único (CEN). Si no existe, se crea dinámicamente.",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "description": "CEN GUID de la empresa",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Detalle de la empresa.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Company"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Empresa no encontrada."
-          }
-        }
-      }
-    },
-    "/api/inventory/companies/{company_cen}/categories": {
-      "get": {
-        "summary": "Obtener categorías",
-        "description": "Obtiene la lista completa de categorías de productos.",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "description": "CEN GUID de la empresa",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Lista de categorías.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Category"
-                  }
-                }
-              }
-            }
+            "description": "OK",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/CompanyContractDto" } } } }
           }
         }
       },
       "post": {
-        "summary": "Crear categoría",
-        "description": "Crea una nueva categoría de productos.",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "description": "CEN GUID de la empresa",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
+        "tags": ["InventoryCompaniesContract"],
+        "summary": "Crea una empresa",
         "requestBody": {
           "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["name"],
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "example": "Entradas"
-                  }
-                }
-              }
-            }
-          }
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateCompanyContractRequest" } } }
         },
         "responses": {
           "201": {
-            "description": "Categoría creada con éxito.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Category"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Solicitud inválida o categoría ya existente."
+            "description": "Created",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CompanyContractDto" } } }
           }
         }
       }
     },
-    "/api/inventory/companies/{company_cen}/categories/{category_cen}": {
+    "/api/inventory/companies/{companyCen}": {
+      "get": {
+        "tags": ["InventoryCompaniesContract"],
+        "summary": "Obtiene una empresa por CEN",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CompanyLookupContractDto" } } } }
+        }
+      },
       "put": {
-        "summary": "Actualizar categoría",
-        "description": "Modifica el nombre de una categoría existente.",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "description": "CEN GUID de la empresa",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "category_cen",
-            "in": "path",
-            "required": true,
-            "description": "CEN GUID de la categoría",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
+        "tags": ["InventoryCompaniesContract"],
+        "summary": "Actualiza una empresa",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
         "requestBody": {
           "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["name"],
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "example": "Entradas Frías"
-                  }
-                }
-              }
-            }
-          }
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateCompanyContractRequest" } } }
         },
         "responses": {
-          "200": {
-            "description": "Categoría actualizada con éxito.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Category"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Categoría no encontrada."
-          }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CompanyContractDto" } } } }
         }
       }
     },
-    "/api/inventory/companies/{company_cen}/units": {
+    "/api/inventory/companies/{companyCen}/dashboard": {
       "get": {
-        "summary": "Obtener unidades",
-        "description": "Obtiene la lista de unidades de medida para productos.",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
+        "tags": ["InventoryCatalogContract"],
+        "summary": "Resume indicadores de catalogo y stock",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": {
-          "200": {
-            "description": "Lista de unidades de medida.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": { "$ref": "#/components/schemas/Unit" }
-                }
-              }
-            }
-          }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InventoryDashboardContractDto" } } } }
+        }
+      }
+    },
+    "/api/inventory/companies/{companyCen}/categories": {
+      "get": {
+        "tags": ["InventoryCatalogContract"],
+        "summary": "Lista categorias de productos",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/CategoryContractDto" } } } } }
         }
       },
       "post": {
-        "summary": "Crear unidad",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
+        "tags": ["InventoryCatalogContract"],
+        "summary": "Crea una categoria de productos",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
         "requestBody": {
           "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["name"],
-                "properties": {
-                  "name": { "type": "string", "example": "Kilogramo" }
-                }
-              }
-            }
-          }
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateCategoryContractRequest" } } }
         },
         "responses": {
-          "201": {
-            "description": "Unidad de medida creada.",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Unit" }
-              }
-            }
-          }
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CategoryContractDto" } } } }
         }
       }
     },
-    "/api/inventory/companies/{company_cen}/products": {
-      "get": {
-        "summary": "Obtener productos",
-        "description": "Devuelve la lista de productos disponibles en el catálogo de la empresa.",
+    "/api/inventory/companies/{companyCen}/categories/{categoryCen}": {
+      "put": {
+        "tags": ["InventoryCatalogContract"],
+        "summary": "Actualiza una categoria de productos",
         "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
+          { "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "categoryCen", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateCategoryContractRequest" } } }
+        },
         "responses": {
-          "200": {
-            "description": "Lista de productos.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": { "$ref": "#/components/schemas/Product" }
-                }
-              }
-            }
-          }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CategoryContractDto" } } } }
+        }
+      }
+    },
+    "/api/inventory/companies/{companyCen}/units": {
+      "get": {
+        "tags": ["InventoryCatalogContract"],
+        "summary": "Lista unidades de medida",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/UnitContractDto" } } } } }
         }
       },
       "post": {
-        "summary": "Crear producto",
+        "tags": ["InventoryCatalogContract"],
+        "summary": "Crea una unidad de medida",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateUnitContractRequest" } } }
+        },
+        "responses": {
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UnitContractDto" } } } }
+        }
+      }
+    },
+    "/api/inventory/companies/{companyCen}/units/{unitCen}": {
+      "put": {
+        "tags": ["InventoryCatalogContract"],
+        "summary": "Actualiza una unidad de medida",
         "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
+          { "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "unitCen", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
         "requestBody": {
           "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["name", "price", "stock", "category_cen", "unit_cen"],
-                "properties": {
-                  "name": { "type": "string", "example": "Ceviche mixto" },
-                  "price": { "type": "number", "example": 45.00 },
-                  "stock": { "type": "number", "example": 20 },
-                  "category_cen": { "type": "string", "format": "uuid" },
-                  "unit_cen": { "type": "string", "format": "uuid" }
-                }
-              }
-            }
-          }
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateUnitContractRequest" } } }
         },
         "responses": {
-          "201": {
-            "description": "Producto creado con éxito.",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Product" }
-              }
-            }
-          }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UnitContractDto" } } } }
         }
       }
     },
-    "/api/inventory/companies/{company_cen}/products/sellable": {
+    "/api/inventory/companies/{companyCen}/warehouses": {
       "get": {
-        "summary": "Obtener productos vendibles (PDV)",
-        "description": "Obtiene la lista de productos que están activos y cuentan con stock disponible para su venta en el PDV.",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
+        "tags": ["InventoryCatalogContract"],
+        "summary": "Lista bodegas",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": {
-          "200": {
-            "description": "Lista de productos vendibles.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": { "$ref": "#/components/schemas/Product" }
-                }
-              }
-            }
-          }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/WarehouseContractDto" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["InventoryCatalogContract"],
+        "summary": "Crea una bodega",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateWarehouseContractRequest" } } }
+        },
+        "responses": {
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WarehouseContractDto" } } } }
         }
       }
     },
-    "/api/inventory/companies/{company_cen}/products/{product_cen}/status": {
+    "/api/inventory/companies/{companyCen}/products": {
+      "get": {
+        "tags": ["InventoryProductsContract"],
+        "summary": "Lista productos del catalogo",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ProductContractDto" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["InventoryProductsContract"],
+        "summary": "Crea un producto",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateProductContractRequest" } } }
+        },
+        "responses": {
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateProductContractResponse" } } } }
+        }
+      }
+    },
+    "/api/inventory/companies/{companyCen}/products/{productCen}": {
+      "put": {
+        "tags": ["InventoryProductsContract"],
+        "summary": "Actualiza un producto",
+        "parameters": [
+          { "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "productCen", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateProductContractRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProductContractDto" } } } }
+        }
+      }
+    },
+    "/api/inventory/companies/{companyCen}/products/lookup": {
+      "post": {
+        "tags": ["InventoryProductsContract"],
+        "summary": "Busca productos por CEN dentro de una empresa",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProductLookupContractRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ProductContractDto" } } } } }
+        }
+      }
+    },
+    "/api/inventory/companies/{companyCen}/products/{productCen}/status": {
       "patch": {
-        "summary": "Cambiar estado de producto",
-        "description": "Permite alternar entre activo/inactivo o agotado/disponible de un producto.",
+        "tags": ["InventoryProductsContract"],
+        "summary": "Actualiza el estado de un producto",
         "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          },
-          {
-            "name": "product_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
+          { "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "productCen", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
         "requestBody": {
           "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "active": { "type": "boolean", "example": true },
-                  "outOfStock": { "type": "boolean", "example": false }
-                }
-              }
-            }
-          }
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateProductStatusContractRequest" } } }
         },
         "responses": {
-          "200": {
-            "description": "Estado actualizado correctamente."
-          }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProductContractDto" } } } }
         }
       }
     },
-    "/api/inventory/companies/{company_cen}/products/validate-stock": {
-      "post": {
-        "summary": "Validar stock de producto",
-        "description": "Permite a otros microservicios (como Ventas) validar si existe suficiente stock de un producto antes de agregarlo a un pedido.",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["productCen", "quantity"],
-                "properties": {
-                  "productCen": { "type": "string", "format": "uuid" },
-                  "quantity": { "type": "number", "example": 2 }
-                }
-              }
-            }
-          }
-        },
+    "/api/inventory/companies/{companyCen}/sellable-products": {
+      "get": {
+        "tags": ["InventorySellableProductsContract"],
+        "summary": "Lista productos vendibles",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": {
-          "200": {
-            "description": "Resultado de la validación.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "valid": { "type": "boolean" },
-                    "availableStock": { "type": "number" }
-                  }
-                }
-              }
-            }
-          }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/SellableProductContractDto" } } } } }
         }
       }
     },
-    "/api/inventory/companies/{company_cen}/products/decrement-stock": {
+    "/api/inventory/companies/{companyCen}/stock": {
+      "get": {
+        "tags": ["InventoryStockContract"],
+        "summary": "Consulta stock por empresa",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/StockItemContractDto" } } } } }
+        }
+      }
+    },
+    "/api/inventory/companies/{companyCen}/stock/validate": {
       "post": {
-        "summary": "Decrementar stock de producto",
-        "description": "Reduce el stock de un producto tras concretar una venta.",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
+        "tags": ["InventoryStockContract"],
+        "summary": "Valida disponibilidad de stock",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
         "requestBody": {
           "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["productCen", "quantity"],
-                "properties": {
-                  "productCen": { "type": "string", "format": "uuid" },
-                  "quantity": { "type": "number", "example": 2 }
-                }
-              }
-            }
-          }
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StockValidationContractRequest" } } }
         },
         "responses": {
-          "200": {
-            "description": "Stock decrementado exitosamente."
-          }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StockValidationContractResponse" } } } }
+        }
+      }
+    },
+    "/api/inventory/companies/{companyCen}/stock/consume": {
+      "post": {
+        "tags": ["InventoryStockContract"],
+        "summary": "Consume stock",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StockConsumeContractRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StockConsumeContractResponse" } } } }
+        }
+      }
+    },
+    "/api/inventory/companies/{companyCen}/stock/increase": {
+      "post": {
+        "tags": ["InventoryStockContract"],
+        "summary": "Incrementa stock",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StockIncreaseContractRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "string" } } } }
+        }
+      }
+    },
+    "/api/inventory/companies/{companyCen}/stock/adjustments": {
+      "post": {
+        "tags": ["InventoryStockContract"],
+        "summary": "Crea un ajuste de inventario",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InventoryAdjustmentContractRequest" } } }
+        },
+        "responses": {
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InventoryAdjustmentContractResponse" } } } }
+        }
+      }
+    },
+    "/api/inventory/companies/{companyCen}/restock-events": {
+      "get": {
+        "tags": ["InventoryStockContract"],
+        "summary": "Stream de eventos de restock (SSE)",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Stream iniciado", "content": { "text/event-stream": { "schema": { "type": "string" } } } }
+        }
+      }
+    },
+    "/api/inventory/companies/{companyCen}/documents": {
+      "get": {
+        "tags": ["InventoryDocumentsContract"],
+        "summary": "Lista documentos de inventario",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/InventoryDocumentContractDto" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["InventoryDocumentsContract"],
+        "summary": "Crea un documento de inventario",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InventoryDocumentContractRequest" } } }
+        },
+        "responses": {
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InventoryDocumentContractDto" } } } }
+        }
+      }
+    },
+    "/api/inventory/companies/{companyCen}/documents/{documentCen}": {
+      "get": {
+        "tags": ["InventoryDocumentsContract"],
+        "summary": "Obtiene detalle de un documento",
+        "parameters": [
+          { "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "documentCen", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InventoryDocumentContractDto" } } } }
+        }
+      }
+    },
+    "/api/inventory/companies/{companyCen}/products/{productCen}/kardex": {
+      "get": {
+        "tags": ["InventoryDocumentsContract"],
+        "summary": "Obtiene kardex de un producto",
+        "parameters": [
+          { "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "productCen", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/KardexMovementContractDto" } } } } }
         }
       }
     }
   },
   "components": {
     "schemas": {
-      "Company": {
-        "type": "object",
-        "properties": {
-          "cen": { "type": "string", "format": "uuid" },
-          "name": { "type": "string" },
-          "nit": { "type": "string" },
-          "active": { "type": "boolean" }
-        }
-      },
-      "Category": {
-        "type": "object",
-        "properties": {
-          "cen": { "type": "string", "format": "uuid" },
-          "code": { "type": "string" },
-          "name": { "type": "string" },
-          "active": { "type": "boolean" }
-        }
-      },
-      "Unit": {
-        "type": "object",
-        "properties": {
-          "cen": { "type": "string", "format": "uuid" },
-          "code": { "type": "string" },
-          "name": { "type": "string" },
-          "abbreviation": { "type": "string" },
-          "active": { "type": "boolean" }
-        }
-      },
-      "Product": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string", "format": "uuid", "description": "Representa el CEN del producto" },
-          "code": { "type": "string" },
-          "nombre": { "type": "string" },
-          "precio": { "type": "number" },
-          "stock": { "type": "number" },
-          "categoria_id": { "type": "integer" },
-          "unidad_id": { "type": "integer" },
-          "activo": { "type": "integer" },
-          "agotado": { "type": "integer" }
-        }
-      }
+      "CategoryContractDto": { "type": "object", "properties": { "categoryCen": { "type": "string" }, "name": { "type": "string" }, "description": { "type": "string", "nullable": true }, "isActive": { "type": "boolean" } } },
+      "CompanyContractDto": { "type": "object", "properties": { "companyCen": { "type": "string" }, "name": { "type": "string" }, "isActive": { "type": "boolean" } } },
+      "CompanyLookupContractDto": { "type": "object", "properties": { "companyId": { "type": "integer" }, "companyCen": { "type": "string" }, "name": { "type": "string" } } },
+      "CreateCategoryContractRequest": { "type": "object", "properties": { "name": { "type": "string" }, "description": { "type": "string", "nullable": true } } },
+      "CreateProductContractRequest": { "type": "object", "properties": { "sku": { "type": "string" }, "name": { "type": "string" }, "description": { "type": "string", "nullable": true }, "categoryCen": { "type": "string" }, "unitCen": { "type": "string" }, "salePrice": { "type": "number" }, "costPrice": { "type": "number", "nullable": true }, "reorderLevel": { "type": "number" }, "stationCode": { "type": "string", "nullable": true } } },
+      "CreateProductContractResponse": { "type": "object", "properties": { "productCen": { "type": "string" }, "sku": { "type": "string" }, "name": { "type": "string" }, "status": { "type": "string" }, "initialStock": { "type": "number" } } },
+      "CreateUnitContractRequest": { "type": "object", "properties": { "name": { "type": "string" }, "abbreviation": { "type": "string", "nullable": true } } },
+      "InventoryDashboardContractDto": { "type": "object", "properties": { "companyCen": { "type": "string" }, "totalProducts": { "type": "integer" }, "totalStockQuantity": { "type": "number" }, "lowStockCount": { "type": "integer" }, "outOfStockCount": { "type": "integer" } } },
+      "ProductContractDto": { "type": "object", "properties": { "productCen": { "type": "string" }, "sku": { "type": "string" }, "name": { "type": "string" }, "description": { "type": "string", "nullable": true }, "categoryCen": { "type": "string" }, "categoryName": { "type": "string" }, "unitCen": { "type": "string" }, "unitName": { "type": "string" }, "salePrice": { "type": "number" }, "costPrice": { "type": "number", "nullable": true }, "reorderLevel": { "type": "number" }, "status": { "type": "string" }, "stationCode": { "type": "string", "nullable": true } } },
+      "ProductLookupContractRequest": { "type": "object", "properties": { "productCens": { "type": "array", "items": { "type": "string" } } } },
+      "SellableProductContractDto": { "type": "object", "properties": { "productCen": { "type": "string" }, "name": { "type": "string" }, "categoryCen": { "type": "string" }, "categoryName": { "type": "string" }, "salePrice": { "type": "number" }, "availableQuantity": { "type": "number" }, "isAvailable": { "type": "boolean" }, "stationCode": { "type": "string", "nullable": true } } },
+      "StockItemContractDto": { "type": "object", "properties": { "productCen": { "type": "string" }, "productName": { "type": "string" }, "warehouseCen": { "type": "string" }, "warehouseName": { "type": "string" }, "availableQuantity": { "type": "number" }, "reservedQuantity": { "type": "number" }, "unitName": { "type": "string" }, "reorderLevel": { "type": "number" }, "isLowStock": { "type": "boolean" } } },
+      "StockValidationContractRequest": { "type": "object", "properties": { "warehouseCen": { "type": "string" }, "source": { "type": "string" }, "referenceCen": { "type": "string", "nullable": true }, "items": { "type": "array", "items": { "$ref": "#/components/schemas/StockValidationItemContractDto" } } } },
+      "StockValidationContractResponse": { "type": "object", "properties": { "isValid": { "type": "boolean" }, "requirements": { "type": "array", "items": { "$ref": "#/components/schemas/StockRequirementContractDto" } } } },
+      "StockValidationItemContractDto": { "type": "object", "properties": { "productCen": { "type": "string" }, "quantity": { "type": "number" } } },
+      "StockRequirementContractDto": { "type": "object", "properties": { "productCen": { "type": "string" }, "productName": { "type": "string" }, "warehouseCen": { "type": "string" }, "requestedQuantity": { "type": "number" }, "availableQuantity": { "type": "number" }, "missingQuantity": { "type": "number" }, "unitName": { "type": "string" }, "reason": { "type": "string" } } },
+      "UnitContractDto": { "type": "object", "properties": { "unitCen": { "type": "string" }, "name": { "type": "string" }, "abbreviation": { "type": "string", "nullable": true }, "isActive": { "type": "boolean" } } },
+      "WarehouseContractDto": { "type": "object", "properties": { "warehouseCen": { "type": "string" }, "name": { "type": "string" }, "isActive": { "type": "boolean" } } },
+      "CreateWarehouseContractRequest": { "type": "object", "properties": { "name": { "type": "string" }, "isActive": { "type": "boolean" } } },
+      "UpdateCompanyContractRequest": { "type": "object", "properties": { "name": { "type": "string" }, "isActive": { "type": "boolean" } } },
+      "CreateCompanyContractRequest": { "type": "object", "properties": { "name": { "type": "string" }, "isActive": { "type": "boolean" } } },
+      "UpdateProductContractRequest": { "type": "object", "properties": { "sku": { "type": "string" }, "name": { "type": "string" }, "description": { "type": "string", "nullable": true }, "categoryCen": { "type": "string" }, "unitCen": { "type": "string" }, "salePrice": { "type": "number" }, "costPrice": { "type": "number", "nullable": true }, "reorderLevel": { "type": "number" }, "stationCode": { "type": "string", "nullable": true } } },
+      "UpdateProductStatusContractRequest": { "type": "object", "properties": { "status": { "type": "string" }, "reason": { "type": "string", "nullable": true } } },
+      "InventoryDocumentContractDto": { "type": "object", "properties": { "documentCen": { "type": "string" }, "documentType": { "type": "string" }, "status": { "type": "string" }, "title": { "type": "string" }, "createdAt": { "type": "string", "format": "date-time" }, "totalItems": { "type": "integer" } } },
+      "InventoryDocumentContractRequest": { "type": "object", "properties": { "documentType": { "type": "string" }, "warehouseCen": { "type": "string" }, "reason": { "type": "string", "nullable": true }, "externalReference": { "type": "string", "nullable": true }, "lines": { "type": "array", "items": { "type": "object", "properties": { "productCen": { "type": "string" }, "quantity": { "type": "number" } } } } } },
+      "KardexMovementContractDto": { "type": "object", "properties": { "movementCen": { "type": "string" }, "documentCen": { "type": "string", "nullable": true }, "productCen": { "type": "string" }, "warehouseCen": { "type": "string" }, "movementType": { "type": "string" }, "quantity": { "type": "number" }, "unitCost": { "type": "number", "nullable": true }, "reason": { "type": "string", "nullable": true }, "createdAt": { "type": "string", "format": "date-time" } } },
+      "StockConsumeContractRequest": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/StockValidationItemContractDto" } } } },
+      "StockConsumeContractResponse": { "type": "object", "properties": { "success": { "type": "boolean" }, "documentCen": { "type": "string" } } },
+      "StockIncreaseContractRequest": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/StockValidationItemContractDto" } } } },
+      "InventoryAdjustmentContractRequest": { "type": "object", "properties": { "lines": { "type": "array", "items": { "type": "object", "properties": { "productCen": { "type": "string" }, "quantity": { "type": "number" }, "adjustmentType": { "type": "string" } } } } } },
+      "InventoryAdjustmentContractResponse": { "type": "object", "properties": { "adjustmentCen": { "type": "string" }, "status": { "type": "string" } } }
     }
   }
 }

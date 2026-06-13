@@ -3,538 +3,185 @@
   "info": {
     "title": "Sales API",
     "description": "Microservicio de ventas, facturación, comensales, KDS (cocina/bar) y dashboard analítico del sistema PDV Restaurante.",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "paths": {
-    "/api/sales/companies/{company_cen}/tickets": {
+    "/api/sales/companies/{companyCen}/tickets": {
       "get": {
-        "summary": "Obtener tickets",
-        "description": "Obtiene la lista de tickets (cuentas) de la empresa, opcionalmente filtrada por estado (abierto, pagado, cancelado).",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          },
-          {
-            "name": "state",
-            "in": "query",
-            "required": false,
-            "description": "Filtrar por estado del ticket",
-            "schema": {
-              "type": "string",
-              "enum": ["abierto", "pagado", "cancelado"]
-            }
-          }
-        ],
+        "tags": ["TicketsContract"],
+        "summary": "Lista tickets del dia",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": {
-          "200": {
-            "description": "Lista de tickets.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": { "$ref": "#/components/schemas/Ticket" }
-                }
-              }
-            }
-          }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/TicketContractResponse" } } } } }
         }
       },
       "post": {
-        "summary": "Crear ticket (cuenta)",
-        "description": "Abre una nueva cuenta/mesa en el sistema asignándole un mesero.",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["mesero"],
-                "properties": {
-                  "mesero": { "type": "string", "example": "Carlos" }
-                }
-              }
-            }
-          }
-        },
+        "tags": ["TicketsContract"],
+        "summary": "Crea un ticket",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateTicketContractRequest" } } } },
         "responses": {
-          "201": {
-            "description": "Ticket creado exitosamente.",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Ticket" }
-              }
-            }
-          }
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TicketContractResponse" } } } }
         }
       }
     },
-    "/api/sales/companies/{company_cen}/tickets/{ticket_cen}": {
+    "/api/sales/companies/{companyCen}/tickets/{ticketCen}/items": {
       "get": {
-        "summary": "Obtener detalle de ticket",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          },
-          {
-            "name": "ticket_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
+        "tags": ["TicketsContract"],
+        "summary": "Lista items de un ticket",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "ticketCen", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": {
-          "200": {
-            "description": "Detalles del ticket.",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Ticket" }
-              }
-            }
-          },
-          "404": {
-            "description": "Ticket no encontrado."
-          }
-        }
-      }
-    },
-    "/api/sales/companies/{company_cen}/tickets/{ticket_cen}/items": {
-      "get": {
-        "summary": "Obtener items del ticket",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          },
-          {
-            "name": "ticket_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Lista de items agregados al ticket.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": { "$ref": "#/components/schemas/TicketItem" }
-                }
-              }
-            }
-          }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/TicketItemContractResponse" } } } } }
         }
       },
       "post": {
-        "summary": "Agregar item al ticket",
-        "description": "Agrega un producto a la comanda del ticket actual. Realiza una validación HTTP interna de stock con el API de Inventario.",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          },
-          {
-            "name": "ticket_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["productCen"],
-                "properties": {
-                  "productCen": { "type": "string", "format": "uuid", "description": "CEN GUID del producto a agregar" },
-                  "quantity": { "type": "integer", "default": 1 },
-                  "notes": { "type": "string", "example": "sin cebolla" }
-                }
-              }
-            }
-          }
-        },
+        "tags": ["TicketsContract"],
+        "summary": "Agrega un item a un ticket",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "ticketCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateTicketItemContractRequest" } } } },
         "responses": {
-          "201": {
-            "description": "Item agregado exitosamente.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "cen": { "type": "string", "format": "uuid" },
-                    "productCen": { "type": "string", "format": "uuid" },
-                    "quantity": { "type": "integer" },
-                    "unitPrice": { "type": "number" },
-                    "notes": { "type": "string" },
-                    "ticket_totals": { "$ref": "#/components/schemas/TicketTotals" }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Stock insuficiente u error en parámetros."
-          }
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TicketItemContractResponse" } } } }
         }
       }
     },
-    "/api/sales/companies/{company_cen}/tickets/{ticket_cen}/items/{item_cen}": {
+    "/api/sales/companies/{companyCen}/tickets/{ticketCen}/items/{ticketItemCen}": {
       "patch": {
-        "summary": "Actualizar item del ticket",
-        "description": "Modifica la cantidad o la nota especial de un item agregado a la comanda.",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          },
-          {
-            "name": "ticket_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          },
-          {
-            "name": "item_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "quantity": { "type": "integer", "example": 3 },
-                  "notes": { "type": "string", "example": "bien cocido" }
-                }
-              }
-            }
-          }
-        },
+        "tags": ["TicketsContract"],
+        "summary": "Actualiza un item de ticket",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "ticketCen", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "ticketItemCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateTicketItemContractRequest" } } } },
         "responses": {
-          "200": {
-            "description": "Item actualizado exitosamente.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "cen": { "type": "string", "format": "uuid" },
-                    "ticket_totals": { "$ref": "#/components/schemas/TicketTotals" }
-                  }
-                }
-              }
-            }
-          }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TicketItemContractResponse" } } } }
+        }
+      }
+    },
+    "/api/sales/companies/{companyCen}/tickets/{ticketCen}/payment": {
+      "post": {
+        "tags": ["TicketPaymentsContract"],
+        "summary": "Procesa el pago de un ticket",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "ticketCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PayTicketContractRequest" } } } },
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PayTicketContractResponse" } } } }
+        }
+      }
+    },
+    "/api/sales/companies/{companyCen}/tickets/{ticketCen}/cancel": {
+      "post": {
+        "tags": ["TicketsContract"],
+        "summary": "Cancela un ticket",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "ticketCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CancelTicketContractResponse" } } } }
+        }
+      }
+    },
+    "/api/sales/companies/{companyCen}/dashboard/daily-sales": {
+      "get": {
+        "tags": ["DashboardContract"],
+        "summary": "Obtiene ventas diarias",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DailySalesDashboardDto" } } } }
+        }
+      }
+    },
+    "/api/sales/companies/{companyCen}/dashboard/monthly": {
+      "get": {
+        "tags": ["DashboardContract"],
+        "summary": "Obtiene comparativa mensual de ventas",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MonthlySalesDashboardDto" } } } }
+        }
+      }
+    },
+    "/api/sales/companies/{companyCen}/kds/teams": {
+      "get": {
+        "tags": ["KdsContract"],
+        "summary": "Lista equipos KDS",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/KdsTeamContractResponse" } } } } }
         }
       },
-      "delete": {
-        "summary": "Eliminar item del ticket",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          },
-          {
-            "name": "ticket_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          },
-          {
-            "name": "item_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Item eliminado del ticket.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": { "type": "string", "example": "deleted" },
-                    "ticket_totals": { "$ref": "#/components/schemas/TicketTotals" }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/sales/companies/{company_cen}/tickets/{ticket_cen}/cancel": {
       "post": {
-        "summary": "Cancelar ticket",
-        "description": "Cancela el ticket y libera la mesa.",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          },
-          {
-            "name": "ticket_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
+        "tags": ["KdsContract"],
+        "summary": "Crea un equipo KDS",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateKdsTeamContractRequest" } } } },
         "responses": {
-          "200": {
-            "description": "Ticket cancelado correctamente."
-          }
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/KdsTeamContractResponse" } } } }
         }
       }
     },
-    "/api/sales/companies/{company_cen}/tickets/{ticket_cen}/payment": {
-      "post": {
-        "summary": "Cobrar ticket",
-        "description": "Procesa el pago del ticket (efectivo, QR, tarjeta), cerrándolo y realizando la llamada HTTP hacia la API de Inventario para descontar el stock de manera definitiva en la base de datos.",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          },
-          {
-            "name": "ticket_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["metodo"],
-                "properties": {
-                  "metodo": { "type": "string", "enum": ["efectivo", "qr", "tarjeta"], "example": "efectivo" }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Pago registrado y ticket cerrado."
-          }
-        }
-      }
-    },
-    "/api/sales/companies/{company_cen}/tickets/{ticket_cen}/send": {
-      "post": {
-        "summary": "Enviar comanda a KDS",
-        "description": "Envía los items del ticket actual que no han sido preparados aún a las respectivas estaciones del KDS (cocina o bar).",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          },
-          {
-            "name": "ticket_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Comanda despachada al KDS exitosamente."
-          }
-        }
-      }
-    },
-    "/api/sales/companies/{company_cen}/kds/teams/{station_cen}/items": {
+    "/api/sales/companies/{companyCen}/kds/teams/{teamCen}/items": {
       "get": {
-        "summary": "Obtener comandas del KDS",
-        "description": "Obtiene la lista de ítems de comanda asignados a una estación física (ej. Cocina o Bar) que se encuentran pendientes de preparación.",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          },
-          {
-            "name": "station_cen",
-            "in": "path",
-            "required": true,
-            "description": "Identificador entero o clave de la estación (1: Cocina, 2: Bar)",
-            "schema": { "type": "string" }
-          }
-        ],
+        "tags": ["KdsContract"],
+        "summary": "Lista items KDS por equipo",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "teamCen", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": {
-          "200": {
-            "description": "Lista de ítems de KDS pendientes.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": { "$ref": "#/components/schemas/KdsItem" }
-                }
-              }
-            }
-          }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/KdsItemContractResponse" } } } } }
         }
       }
     },
-    "/api/sales/companies/{company_cen}/kds/items/{item_cen}/status": {
+    "/api/sales/companies/{companyCen}/kds/items/{ticketItemCen}/status": {
       "patch": {
-        "summary": "Actualizar estado de preparación",
-        "description": "Cambia el estado de preparación de un ítem en KDS (de pendiente a listo, entregado, etc.).",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          },
-          {
-            "name": "item_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["status"],
-                "properties": {
-                  "status": { "type": "string", "enum": ["pendiente", "listo", "entregado"], "example": "listo" }
-                }
-              }
-            }
-          }
-        },
+        "tags": ["KdsContract"],
+        "summary": "Actualiza estado de item KDS",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "ticketItemCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateKdsItemStatusContractRequest" } } } },
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/sales/companies/{companyCen}/waiters": {
+      "get": {
+        "tags": ["WaitersContract"],
+        "summary": "Lista meseros por empresa",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": {
-          "200": {
-            "description": "Estado actualizado correctamente."
-          }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/WaiterContractResponse" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["WaitersContract"],
+        "summary": "Crea un mesero",
+        "parameters": [{ "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateWaiterContractRequest" } } } },
+        "responses": {
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WaiterContractResponse" } } } }
         }
       }
     },
-    "/api/sales/companies/{company_cen}/dashboard/daily-sales": {
+    "/api/sales/payment-methods": {
       "get": {
-        "summary": "Reporte de ventas del día",
-        "parameters": [
-          {
-            "name": "company_cen",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
+        "tags": ["PaymentMethodsContract"],
+        "summary": "Lista metodos de pago",
         "responses": {
-          "200": {
-            "description": "Métricas diarias de facturación.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "total_ventas": { "type": "number" },
-                    "cantidad_tickets": { "type": "integer" }
-                  }
-                }
-              }
-            }
-          }
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PaymentMethodContractResponse" } } } } }
         }
       }
     }
   },
   "components": {
     "schemas": {
-      "Ticket": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "cen": { "type": "string", "format": "uuid" },
-          "mesero": { "type": "string" },
-          "estado": { "type": "string" },
-          "subtotal": { "type": "number" },
-          "impuesto": { "type": "number" },
-          "total": { "type": "number" },
-          "creado_en": { "type": "string", "format": "date-time" }
-        }
-      },
-      "TicketItem": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "cen": { "type": "string", "format": "uuid" },
-          "producto_id": { "type": "integer" },
-          "cantidad": { "type": "integer" },
-          "precio_unitario": { "type": "number" },
-          "subtotal": { "type": "number" },
-          "nota": { "type": "string" }
-        }
-      },
-      "TicketTotals": {
-        "type": "object",
-        "properties": {
-          "subtotal": { "type": "number" },
-          "impuesto": { "type": "number" },
-          "total": { "type": "number" }
-        }
-      },
-      "KdsItem": {
-        "type": "object",
-        "properties": {
-          "item_cen": { "type": "string", "format": "uuid" },
-          "ticket_cen": { "type": "string", "format": "uuid" },
-          "mesero": { "type": "string" },
-          "nombre": { "type": "string" },
-          "cantidad": { "type": "integer" },
-          "nota": { "type": "string" },
-          "estado": { "type": "string" },
-          "creado_en": { "type": "string", "format": "date-time" }
-        }
-      }
+      "TicketContractResponse": { "type": "object", "properties": { "ticketCen": { "type": "string" }, "dailyNumber": { "type": "integer" }, "status": { "type": "string" }, "createdAt": { "type": "string" }, "waiterCen": { "type": "string", "nullable": true }, "companyCen": { "type": "string", "nullable": true }, "taxAmount": { "type": "number" } } },
+      "CreateTicketContractRequest": { "type": "object", "properties": { "waiterCen": { "type": "string", "nullable": true } } },
+      "TicketItemContractResponse": { "type": "object", "properties": { "ticketItemCen": { "type": "string" }, "productCen": { "type": "string" }, "productName": { "type": "string" }, "quantity": { "type": "integer" }, "unitPrice": { "type": "number" }, "note": { "type": "string", "nullable": true }, "status": { "type": "string" } } },
+      "CreateTicketItemContractRequest": { "type": "object", "properties": { "productCen": { "type": "string" }, "quantity": { "type": "integer" }, "note": { "type": "string", "nullable": true } } },
+      "UpdateTicketItemContractRequest": { "type": "object", "properties": { "quantity": { "type": "integer" }, "note": { "type": "string", "nullable": true } } },
+      "PayTicketContractRequest": { "type": "object", "properties": { "paymentMethodCode": { "type": "string" } } },
+      "PayTicketContractResponse": { "type": "object", "properties": { "saleCen": { "type": "string" }, "ticketCen": { "type": "string" }, "status": { "type": "string" }, "subtotal": { "type": "number" }, "taxAmount": { "type": "number" }, "total": { "type": "number" } } },
+      "CancelTicketContractResponse": { "type": "object", "properties": { "ticketCen": { "type": "string" }, "status": { "type": "string" } } },
+      "DailySalesDashboardDto": { "type": "object", "properties": { "totalSales": { "type": "number" }, "ticketsCount": { "type": "integer" }, "averageTicket": { "type": "number" } } },
+      "MonthlySalesDashboardDto": { "type": "object", "properties": { "currentMonthTotal": { "type": "number" }, "previousMonthTotal": { "type": "number" }, "growthPercentage": { "type": "number" } } },
+      "KdsTeamContractResponse": { "type": "object", "properties": { "teamCen": { "type": "string" }, "name": { "type": "string" } } },
+      "CreateKdsTeamContractRequest": { "type": "object", "properties": { "name": { "type": "string" } } },
+      "KdsItemContractResponse": { "type": "object", "properties": { "ticketItemCen": { "type": "string" }, "ticketCen": { "type": "string" }, "productCen": { "type": "string" }, "productName": { "type": "string" }, "quantity": { "type": "integer" }, "status": { "type": "string" }, "note": { "type": "string", "nullable": true }, "createdAt": { "type": "string" } } },
+      "UpdateKdsItemStatusContractRequest": { "type": "object", "properties": { "status": { "type": "string" } } },
+      "WaiterContractResponse": { "type": "object", "properties": { "waiterCen": { "type": "string" }, "name": { "type": "string" } } },
+      "CreateWaiterContractRequest": { "type": "object", "properties": { "name": { "type": "string" } } },
+      "PaymentMethodContractResponse": { "type": "object", "properties": { "paymentMethodCode": { "type": "string" }, "name": { "type": "string" }, "isActive": { "type": "boolean" } } }
     }
   }
 }
