@@ -56,22 +56,95 @@ def purchases_get_orders(company_cen):
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
         
-        compras = query('''
+        status = request.args.get('status')
+        page = request.args.get('page', '1')
+        page_size = request.args.get('pageSize', '20')
+        sort_descending = request.args.get('sortDescending', 'true').lower() == 'true'
+        
+        try:
+            page = int(page)
+            if page < 1: page = 1
+        except ValueError:
+            page = 1
+            
+        try:
+            page_size = int(page_size)
+            if page_size < 1: page_size = 20
+        except ValueError:
+            page_size = 20
+            
+        status_map_to_db = {
+            'DRAFT': 'pendiente',
+            'CONFIRMED': 'confirmada',
+            'CANCELLED': 'cancelada'
+        }
+        
+        where_clauses = []
+        sql_params = []
+        
+        if status:
+            db_status = status_map_to_db.get(status.upper())
+            if db_status:
+                where_clauses.append("c.estado = %s")
+                sql_params.append(db_status)
+            else:
+                where_clauses.append("c.estado = %s")
+                sql_params.append(status.lower())
+                
+        where_str = ""
+        if where_clauses:
+            where_str = " WHERE " + " AND ".join(where_clauses)
+            
+        # Count total matching records
+        count_sql = "SELECT COUNT(*) as count FROM compras c JOIN proveedores p ON p.id = c.proveedor_id" + where_str
+        count_res = query(count_sql, sql_params, fetch='one')
+        total_count = count_res['count'] if count_res else 0
+        
+        # Determine sorting
+        sort_dir = "DESC" if sort_descending else "ASC"
+        order_by = f"ORDER BY c.fecha {sort_dir}"
+        
+        # Determine paging limits
+        offset = (page - 1) * page_size
+        
+        # Final data query
+        data_sql = f'''
             SELECT c.*, p.nombre as supplier_name, p.cen as supplier_cen,
                    (SELECT COUNT(*) FROM compra_items ci WHERE ci.compra_id = c.id) as item_count
             FROM compras c
             JOIN proveedores p ON p.id = c.proveedor_id
-            ORDER BY c.fecha DESC
-        ''')
+            {where_str}
+            {order_by}
+            LIMIT %s OFFSET %s
+        '''
+        
+        compras = query(data_sql, sql_params + [page_size, offset])
         
         map_status = {'pendiente': 'DRAFT', 'confirmada': 'CONFIRMED', 'cancelada': 'CANCELLED'}
-        return jsonify([{
+        
+        items = [{
             'cen': r['cen'],
+            'orderCen': r['cen'],
             'supplier': r['supplier_name'],
+            'supplierCen': r['supplier_cen'],
             'status': map_status.get(r['estado'], 'DRAFT'),
             'date': r['fecha'].isoformat() if hasattr(r['fecha'], 'isoformat') else str(r['fecha']),
+            'createdAt': r['creado_en'].isoformat() if hasattr(r['creado_en'], 'isoformat') else str(r['creado_en']),
+            'confirmedAt': (r['confirmado_en'].isoformat() if hasattr(r['confirmado_en'], 'isoformat') else str(r['confirmado_en'])) if r['confirmado_en'] else None,
             'itemCount': r['item_count']
-        } for r in compras])
+        } for r in compras]
+        
+        total_pages = (total_count + page_size - 1) // page_size if page_size > 0 else 1
+        
+        return jsonify({
+            'items': items,
+            'total': total_count,
+            'totalCount': total_count,
+            'page': page,
+            'currentPage': page,
+            'pageSize': page_size,
+            'totalPages': total_pages
+        }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -119,16 +192,20 @@ def purchases_create_order(company_cen):
         if not c: return jsonify({'error': 'Company not found'}), 404
         
         data = request.get_json() or {}
-        supplier_cen = data.get('supplierCen')
+        supplier_ref = (data.get('supplierCen') or data.get('supplier') or '').strip()
         items_data = data.get('items', [])
         
-        if not supplier_cen: return jsonify({'error': 'supplierCen is required'}), 400
-        
-        prov = query("SELECT id, nombre FROM proveedores WHERE cen = %s", (supplier_cen,), fetch='one')
-        if not prov: return jsonify({'error': 'Supplier not found'}), 404
-        
+        if not supplier_ref:
+            return jsonify({'error': 'Supplier code or CEN is required.'}), 400
+            
+        prov = query("SELECT id, nombre FROM proveedores WHERE cen = %s OR UPPER(code) = %s", 
+                     (supplier_ref, supplier_ref.upper()), fetch='one')
+        if not prov:
+            return jsonify({'error': f"Supplier '{supplier_ref}' not found."}), 400
+            
         new_order_cen = str(uuid.uuid4())
-        count = query("SELECT COUNT(*) as count FROM compras", fetch='one')['count']
+        count_res = query("SELECT COUNT(*) as count FROM compras", fetch='one')
+        count = count_res['count'] if count_res else 0
         new_code = f"ORD-{count+1:05d}"
         
         order_id = execute('''
@@ -142,9 +219,21 @@ def purchases_create_order(company_cen):
             p_cen = item.get('productCen')
             qty = item.get('quantity', 0)
             
+            if not p_cen:
+                continue
+                
+            try:
+                qty_val = float(qty)
+                if qty_val < 1 or qty_val != int(qty_val):
+                    continue
+                qty = int(qty_val)
+            except (ValueError, TypeError):
+                continue
+                
             prod = ensure_local_product(company_cen, p_cen)
-            if not prod: continue
-            
+            if not prod:
+                continue
+                
             subtotal = float(prod['precio']) * qty
             total_order += subtotal
             new_item_cen = str(uuid.uuid4())
@@ -160,10 +249,15 @@ def purchases_create_order(company_cen):
                 'quantity': qty
             })
             
+        if not items_created:
+            execute("DELETE FROM compras WHERE id = %s", (order_id,))
+            return jsonify({'error': 'At least one valid item with a positive whole quantity is required.'}), 400
+            
         execute("UPDATE compras SET total = %s WHERE id = %s", (total_order, order_id))
         
         return jsonify({
             'cen': new_order_cen,
+            'orderCen': new_order_cen,
             'supplier': prov['nombre'],
             'status': 'DRAFT',
             'date': datetime_now_str(),
@@ -182,8 +276,10 @@ def purchases_confirm_order(company_cen, order_cen):
         compra = query("SELECT id, estado FROM compras WHERE cen = %s", (order_cen,), fetch='one')
         if not compra: return jsonify({'error': 'Order not found'}), 404
         
-        if compra['estado'] != 'pendiente':
-            return jsonify({'error': 'Only pending orders can be confirmed'}), 400
+        if compra['estado'] == 'confirmada':
+            return jsonify({'error': 'Order is already confirmed.'}), 409
+        elif compra['estado'] != 'pendiente':
+            return jsonify({'error': 'Only pending orders can be confirmed.'}), 400
             
         items = query('''
             SELECT ci.cantidad, p.cen as product_cen, p.nombre
@@ -193,7 +289,7 @@ def purchases_confirm_order(company_cen, order_cen):
         ''', (compra['id'],))
         
         if not items:
-            return jsonify({'error': 'Order has no items'}), 400
+            return jsonify({'error': 'Order has no items.'}), 400
             
         from inventory_client import increase_stock
         for item in items:
@@ -215,8 +311,12 @@ def purchases_cancel_order(company_cen, order_cen):
         compra = query("SELECT id, estado FROM compras WHERE cen = %s", (order_cen,), fetch='one')
         if not compra: return jsonify({'error': 'Order not found'}), 404
         
-        if compra['estado'] != 'pendiente':
-            return jsonify({'error': 'Only pending orders can be cancelled'}), 400
+        if compra['estado'] == 'confirmada':
+            return jsonify({'error': 'Confirmed orders cannot be cancelled.'}), 409
+        elif compra['estado'] == 'cancelada':
+            return jsonify({'error': 'Order is already cancelled.'}), 409
+        elif compra['estado'] != 'pendiente':
+            return jsonify({'error': 'Only pending orders can be cancelled.'}), 400
             
         execute("UPDATE compras SET estado = 'cancelada' WHERE cen = %s", (order_cen,))
         return purchases_get_order_detail(company_cen, order_cen)
@@ -232,6 +332,8 @@ def purchases_get_suppliers(company_cen):
     try:
         c = get_company(company_cen)
         if not c: return jsonify({'error': 'Company not found'}), 404
+        
+        active_only = request.args.get('activeOnly', 'true').lower() == 'true'
         
         suppliers = query("SELECT * FROM proveedores ORDER BY nombre ASC")
         return jsonify([{
@@ -260,7 +362,8 @@ def purchases_create_supplier(company_cen):
         
         new_cen = str(uuid.uuid4())
         if not code:
-            count = query("SELECT COUNT(*) as count FROM proveedores", fetch='one')['count']
+            count_res = query("SELECT COUNT(*) as count FROM proveedores", fetch='one')
+            count = count_res['count'] if count_res else 0
             code = f"SUP-{count+1:05d}"
             
         execute("INSERT INTO proveedores (nombre, cen, code) VALUES (%s, %s, %s)", (name, new_cen, code))
@@ -270,5 +373,25 @@ def purchases_create_supplier(company_cen):
             'name': name,
             'active': True
         }), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@bp.route('/api/purchases/companies/<company_cen>/suppliers/<supplier_code>', methods=['GET'])
+def purchases_get_supplier(company_cen, supplier_code):
+    try:
+        c = get_company(company_cen)
+        if not c: return jsonify({'error': 'Company not found'}), 404
+        
+        code = supplier_code.strip().upper()
+        s = query("SELECT * FROM proveedores WHERE UPPER(code) = %s OR cen = %s", (code, supplier_code), fetch='one')
+        if not s:
+            return jsonify({'error': 'Supplier not found'}), 404
+            
+        return jsonify({
+            'supplierCen': s['cen'],
+            'code': s['code'],
+            'name': s['nombre'],
+            'active': True
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 400
