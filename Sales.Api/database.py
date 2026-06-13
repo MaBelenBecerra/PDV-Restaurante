@@ -96,12 +96,19 @@ def execute(sql, params=None):
         conn.close()
 
 def init_db():
-    """Verify database connection on startup."""
-    try:
-        conn = get_db()
-        conn.close()
-        print("Database connection verified successfully.")
-    except Exception as e:
-        print(f"CRITICAL: Failed to connect to database: {e}")
-        print("Please ensure PostgreSQL is running and credentials in .env are correct.")
+    """Verify database connection on startup with retries."""
+    import time
+    max_retries = 5
+    for i in range(max_retries):
+        try:
+            conn = get_db()
+            conn.close()
+            print("Database connection verified successfully.")
+            return
+        except Exception as e:
+            print(f"Waiting for database... (attempt {i+1}/{max_retries}): {e}")
+            time.sleep(3)
+    
+    print("CRITICAL: Failed to connect to database after several attempts.")
+    print("Please ensure PostgreSQL is running and credentials in .env are correct.")
 
