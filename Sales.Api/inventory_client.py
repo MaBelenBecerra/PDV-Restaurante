@@ -1,94 +1,89 @@
 import os
 import requests
+import time
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 from dotenv import load_dotenv
 
-# Ensure environment variables are loaded before reading them
 load_dotenv()
 
-INVENTORY_API_URL = os.environ.get("INVENTORY_API_URL", "http://localhost:5143")
+INVENTORY_API_URL = os.environ.get("INVENTORY_API_URL", "http://inventory-api:5143")
 
-# Configure a resilient session with 3 retries and exponential backoff
+# Session with RETRY (Polly Pattern 1)
 session = requests.Session()
 retries = Retry(
     total=3,
-    backoff_factor=2,  # Wait times: 2s, 4s, 8s (matching C# Polly backoff)
+    backoff_factor=1,
     status_forcelist=[500, 502, 503, 504],
     raise_on_status=False
 )
 session.mount('http://', HTTPAdapter(max_retries=retries))
-session.mount('https://', HTTPAdapter(max_retries=retries))
+
+# Simple CIRCUIT BREAKER (Polly Pattern 2)
+circuit_open_until = 0
+FAILURE_THRESHOLD = 5
+failures = 0
 
 class DownstreamServiceError(Exception):
     def __init__(self, message, status_code=503):
         super().__init__(message)
         self.status_code = status_code
 
+def check_circuit():
+    global circuit_open_until, failures
+    if circuit_open_until > time.time():
+        # FALLBACK (Polly Pattern 3): Return controlled error when circuit is open
+        raise DownstreamServiceError("Servicio temporalmente deshabilitado (Circuit Breaker)", 503)
+    return True
+
+def record_failure():
+    global failures, circuit_open_until
+    failures += 1
+    if failures >= FAILURE_THRESHOLD:
+        circuit_open_until = time.time() + 30 # Open for 30s
+        failures = 0
+
+def record_success():
+    global failures
+    failures = 0
+
 def lookup_products(company_cen, product_cens):
-    print("LOOKUP_PRODUCTS CONNECTING TO:", INVENTORY_API_URL, flush=True)
-    if not product_cens:
-        return []
+    check_circuit()
     try:
         url = f"{INVENTORY_API_URL}/api/inventory/companies/{company_cen}/products/lookup"
         res = session.post(url, json={"productCens": product_cens}, timeout=5)
         if res.status_code == 200:
+            record_success()
             return res.json()
-        elif res.status_code == 404:
-            raise DownstreamServiceError("Compañía o productos no encontrados en inventario", 404)
-        else:
-            raise DownstreamServiceError(f"Error en el servicio de inventario (HTTP {res.status_code})", 502)
-    except requests.exceptions.RequestException as e:
-        raise DownstreamServiceError("El servicio de inventario no está disponible o no responde", 503)
+        record_failure()
+        return []
+    except Exception:
+        record_failure()
+        # FALLBACK: Return empty list instead of crashing
+        return []
 
-def validate_stock(company_cen, product_cen, quantity):
+def increase_stock(company_cen, items):
+    check_circuit()
     try:
-        url = f"{INVENTORY_API_URL}/api/inventory/companies/{company_cen}/stock/validate"
-        res = session.post(url, json={"productCen": product_cen, "quantity": quantity}, timeout=5)
-        if res.status_code == 200:
-            return res.json().get("available", False)
-        elif res.status_code == 404:
-            raise DownstreamServiceError("Producto no encontrado en inventario para validar stock", 404)
-        else:
-            raise DownstreamServiceError(f"Error en el servicio de inventario (HTTP {res.status_code})", 502)
-    except requests.exceptions.RequestException as e:
-        raise DownstreamServiceError("El servicio de inventario no está disponible o no responde", 503)
+        url = f"{INVENTORY_API_URL}/api/inventory/companies/{company_cen}/stock/increase"
+        res = session.post(url, json={"items": items}, timeout=5)
+        if res.status_code in (200, 201):
+            record_success()
+            return True
+        record_failure()
+    except Exception:
+        record_failure()
+    return False
 
-def consume_stock(company_cen, product_cen, quantity, notes="Ticket payment"):
+def consume_stock(company_cen, items):
+    check_circuit()
     try:
         url = f"{INVENTORY_API_URL}/api/inventory/companies/{company_cen}/stock/consume"
-        res = session.post(url, json={
-            "productCen": product_cen,
-            "quantity": quantity,
-            "reference": "SALES",
-            "notes": notes
-        }, timeout=5)
+        res = session.post(url, json={"items": items}, timeout=5)
         if res.status_code in (200, 201):
+            record_success()
             return True
-        elif res.status_code == 404:
-            raise DownstreamServiceError("Producto no encontrado en inventario para descontar stock", 404)
-        elif res.status_code == 409:
-            raise DownstreamServiceError("Stock insuficiente en inventario para completar la venta", 409)
-        else:
-            raise DownstreamServiceError(f"Error al descontar stock (HTTP {res.status_code})", 502)
-    except requests.exceptions.RequestException as e:
-        raise DownstreamServiceError("El servicio de inventario no está disponible o no responde", 503)
-
-def get_sellable_products(company_cen, search=None, category_cen=None, page=1, page_size=20):
-    try:
-        url = f"{INVENTORY_API_URL}/api/inventory/companies/{company_cen}/sellable-products"
-        params = {
-            "search": search,
-            "categoryCen": category_cen,
-            "page": page,
-            "pageSize": page_size
-        }
-        res = session.get(url, params=params, timeout=5)
-        if res.status_code == 200:
-            return res.json()
-        elif res.status_code == 404:
-            raise DownstreamServiceError("Compañía no encontrada en inventario", 404)
-        else:
-            raise DownstreamServiceError(f"Error en el servicio de inventario (HTTP {res.status_code})", 502)
-    except requests.exceptions.RequestException as e:
-        raise DownstreamServiceError("El servicio de inventario no está disponible o no responde", 503)
+        record_failure()
+    except Exception:
+        record_failure()
+    return False
