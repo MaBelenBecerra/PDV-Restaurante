@@ -98,7 +98,7 @@ def execute(sql, params=None):
 def init_db():
     """Verify database connection on startup with retries."""
     import time
-    max_retries = 5
+    max_retries = 10
     for i in range(max_retries):
         try:
             conn = get_db()
