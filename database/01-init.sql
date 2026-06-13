@@ -1,11 +1,6 @@
 -- ============================================================
--- BASE DE DATOS: PDV-RESTAURANTE (POSTGRESQL DDL SCHEMA)
+-- BASE DE DATOS: PDV-RESTAURANTE (POSTGRESQL INITIALIZATION)
 -- ============================================================
-
--- NOTA: Ejecutar este script primero conectado al servidor de PostgreSQL (base 'postgres')
--- CREATE DATABASE pdv_restaurante;
-
--- Conéctate a la base de datos "pdv_restaurante" antes de ejecutar lo siguiente:
 
 -- Crear Esquemas
 CREATE SCHEMA IF NOT EXISTS inventario;
@@ -64,21 +59,21 @@ CREATE TABLE IF NOT EXISTS inventario.productos (
     station_code VARCHAR(50) DEFAULT 'COCINA'
 );
 
--- Ajustes de Stock (Historias antiguas)
+-- Ajustes de Stock (Historias antiguas / Compatibilidad)
 CREATE TABLE IF NOT EXISTS inventario.ajustes_stock (
     id SERIAL PRIMARY KEY,
     producto_id INTEGER NOT NULL REFERENCES inventario.productos(id) ON DELETE CASCADE,
     tipo VARCHAR(50) NOT NULL CHECK (tipo IN ('entrada','salida')),
-    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    cantidad INTEGER NOT NULL CHECK (cantidad > 0),
     motivo TEXT NOT NULL,
     creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Bodegas (Nuevas)
+-- Bodegas
 CREATE TABLE IF NOT EXISTS inventario.bodegas (
     id SERIAL PRIMARY KEY,
     cen VARCHAR(50) NOT NULL UNIQUE,
-    nombre VARCHAR(100) NOT NULL,
+    nombre VARCHAR(255) NOT NULL,
     activo INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0,1)),
     creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -88,7 +83,7 @@ CREATE TABLE IF NOT EXISTS inventario.documentos (
     id SERIAL PRIMARY KEY,
     cen VARCHAR(50) NOT NULL UNIQUE,
     tipo VARCHAR(50) NOT NULL CHECK (tipo IN ('ADJUSTMENT','ENTRY','CONSUME')),
-    titulo VARCHAR(255) NOT NULL,
+    titulo VARCHAR(255),
     referencia VARCHAR(255),
     notas TEXT,
     estado VARCHAR(50) NOT NULL DEFAULT 'CONFIRMED' CHECK (estado IN ('DRAFT','CONFIRMED','CANCELLED')),
@@ -96,26 +91,27 @@ CREATE TABLE IF NOT EXISTS inventario.documentos (
     confirmado_en TIMESTAMP
 );
 
--- Items de Documentos de Inventario
+-- Items de Documentos de Inventario (Sincronizado con Inventory.Api)
 CREATE TABLE IF NOT EXISTS inventario.documentos_items (
     id SERIAL PRIMARY KEY,
     documento_id INTEGER NOT NULL REFERENCES inventario.documentos(id) ON DELETE CASCADE,
-    producto_id INTEGER NOT NULL REFERENCES inventario.productos(id),
-    cantidad INTEGER NOT NULL CHECK (cantidad > 0),
+    producto_cen VARCHAR(50) NOT NULL,
+    cantidad NUMERIC(10,2) NOT NULL,
+    costo_unitario NUMERIC(10,2),
     notas TEXT,
     creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Movimientos Kardex
+-- Movimientos Kardex (Sincronizado con Inventory.Api)
 CREATE TABLE IF NOT EXISTS inventario.kardex (
     id SERIAL PRIMARY KEY,
-    cen VARCHAR(50) NOT NULL UNIQUE,
-    documento_id INTEGER REFERENCES inventario.documentos(id) ON DELETE SET NULL,
-    producto_id INTEGER NOT NULL REFERENCES inventario.productos(id) ON DELETE CASCADE,
+    movimiento_cen VARCHAR(50) NOT NULL UNIQUE,
+    documento_cen VARCHAR(50),
+    producto_cen VARCHAR(50) NOT NULL,
     bodega_cen VARCHAR(50) NOT NULL,
-    tipo_movimiento VARCHAR(50) NOT NULL CHECK (tipo_movimiento IN ('ADJUSTMENT','ENTRY','CONSUME')),
-    cantidad NUMERIC(12,2) NOT NULL,
-    costo_unitario NUMERIC(12,2) NOT NULL,
+    tipo_movimiento VARCHAR(50) NOT NULL,
+    cantidad NUMERIC(10,2) NOT NULL,
+    costo_unitario NUMERIC(10,2),
     motivo TEXT,
     creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -140,12 +136,12 @@ CREATE TABLE IF NOT EXISTS ventas.clientes (
     creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Meseros (Nuevos)
+-- Meseros
 CREATE TABLE IF NOT EXISTS ventas.meseros (
     id SERIAL PRIMARY KEY,
     cen VARCHAR(50) NOT NULL UNIQUE,
     nombre VARCHAR(255) NOT NULL,
-    email VARCHAR(100),
+    email VARCHAR(255),
     telefono VARCHAR(50),
     activo INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0,1)),
     creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -270,14 +266,6 @@ CREATE OR REPLACE FUNCTION ventas.update_ticket_totals() RETURNS TRIGGER AS $$
 DECLARE
     t_id INTEGER;
     t_rate NUMERIC;
-END;
-$$ LANGUAGE plpgsql;
-
--- Definición del disparador automático de subtotales
-CREATE OR REPLACE FUNCTION ventas.update_ticket_totals() RETURNS TRIGGER AS $$
-DECLARE
-    t_id INTEGER;
-    t_rate NUMERIC;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         t_id := OLD.ticket_id;
@@ -297,12 +285,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER trg_ticket_items_totals
+DROP TRIGGER IF EXISTS trg_ticket_items_totals ON ventas.ticket_items;
+CREATE TRIGGER trg_ticket_items_totals
 AFTER INSERT OR UPDATE OR DELETE ON ventas.ticket_items
 FOR EACH ROW EXECUTE FUNCTION ventas.update_ticket_totals();
 
 -- ============================================================
--- VISTAS COMPATIBLES DENTRO DEL ESQUEMA VENTAS
+-- VISTAS COMPATIBLES
 -- ============================================================
 
 CREATE OR REPLACE VIEW ventas.v_ventas_hoy AS

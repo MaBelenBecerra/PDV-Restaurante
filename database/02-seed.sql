@@ -7,13 +7,13 @@ BEGIN;
 -- 1. Empresas
 INSERT INTO public.empresas (cen, nombre, nit, activo) 
 VALUES ('9f2a4e4e-ac9d-46a4-98ea-412d1c168d12', 'Restaurante El Sabor', '20123456789', 1) 
-ON CONFLICT DO NOTHING;
+ON CONFLICT (cen) DO NOTHING;
 
 -- 2. Estaciones KDS
 INSERT INTO ventas.estaciones (id, nombre, tipo, cen, code) VALUES 
     (1, 'Cocina', 'cocina', 'cocina-cen-guid-1', 'EST-00001'),
     (2, 'Bar', 'bar', 'bar-cen-guid-2', 'EST-00002')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 -- 3. Proveedores
 INSERT INTO compras.proveedores (nombre, contacto, telefono, email, cen, code) VALUES

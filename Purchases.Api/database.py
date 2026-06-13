@@ -6,44 +6,43 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-DB_HOST = os.environ.get("DB_HOST", "localhost")
-DB_PORT = os.environ.get("DB_PORT", "5432")
-DB_NAME = os.environ.get("DB_NAME", "pdv_restaurante")
-DB_USER = os.environ.get("DB_USER", "postgres")
-DB_PASSWORD = os.environ.get("DB_PASSWORD", "postgres")
+DB_CONNECTION_STRING = os.environ.get("DB_CONNECTION_STRING")
 DB_SEARCH_PATH = os.environ.get("DB_SEARCH_PATH", "compras,inventario,public")
 
 def get_db():
     """Create a database connection with autocommit enabled and set search path."""
-    conn_str = os.environ.get("DB_CONNECTION_STRING")
-    if conn_str:
-        params = {}
-        for part in conn_str.split(';'):
-            if '=' in part:
-                key, val = part.split('=', 1)
-                key = key.strip().lower()
-                val = val.strip()
-                if key == 'host':
-                    params['host'] = val
-                elif key == 'port':
-                    params['port'] = val
-                elif key == 'database' or key == 'dbname':
-                    params['database'] = val
-                elif key == 'username' or key == 'user':
-                    params['user'] = val
-                elif key == 'password':
-                    params['password'] = val
-        conn = psycopg2.connect(
-            options=f"-c search_path={DB_SEARCH_PATH}",
-            **params
-        )
+    if DB_CONNECTION_STRING:
+        # Parse connection string if it's in Key=Value format (common in .env.example)
+        if 'Host=' in DB_CONNECTION_STRING:
+            params = {}
+            for part in DB_CONNECTION_STRING.split(';'):
+                if '=' in part:
+                    key, val = part.split('=', 1)
+                    key = key.strip().lower()
+                    val = val.strip()
+                    if key == 'host': params['host'] = val
+                    elif key == 'port': params['port'] = val
+                    elif key == 'database' or key == 'dbname': params['database'] = val
+                    elif key == 'username' or key == 'user': params['user'] = val
+                    elif key == 'password': params['password'] = val
+            conn = psycopg2.connect(
+                options=f"-c search_path={DB_SEARCH_PATH}",
+                **params
+            )
+        else:
+            # Assume it's a standard libpq URI
+            conn = psycopg2.connect(
+                DB_CONNECTION_STRING,
+                options=f"-c search_path={DB_SEARCH_PATH}"
+            )
     else:
+        # Fallback to individual variables if provided (even if not in .env.example, for flexibility)
         conn = psycopg2.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            database=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD,
+            host=os.environ.get("DB_HOST", "localhost"),
+            port=os.environ.get("DB_PORT", "5432"),
+            database=os.environ.get("DB_NAME", "pdv_restaurante"),
+            user=os.environ.get("DB_USER", "postgres"),
+            password=os.environ.get("DB_PASSWORD", "postgres"),
             options=f"-c search_path={DB_SEARCH_PATH}"
         )
     return conn
@@ -96,10 +95,6 @@ def execute(sql, params=None):
         cursor.close()
         conn.close()
 
-def run_migrations():
-    """Schema is managed via pgAdmin SQL script."""
-    pass
-
 def init_db():
     """Verify database connection on startup."""
     try:
@@ -109,3 +104,4 @@ def init_db():
     except Exception as e:
         print(f"CRITICAL: Failed to connect to database: {e}")
         print("Please ensure PostgreSQL is running and credentials in .env are correct.")
+
