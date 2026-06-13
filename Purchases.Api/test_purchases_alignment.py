@@ -81,7 +81,7 @@ class TestPurchasesAlignment(unittest.TestCase):
         cls.company_cen = "test-company-" + str(uuid.uuid4())[:8]
         execute(
             "INSERT INTO empresas (cen, nombre, nit, activo) VALUES (%s, %s, %s, 1) ON CONFLICT (cen) DO NOTHING",
-            (cls.company_cen, "Empresa Test Alignment", "123456789")
+            (cls.company_cen, f"Empresa Test Alignment {cls.company_cen}", "123456789")
         )
         
         # We also need a category and product in inventory for testing item creation
@@ -89,30 +89,30 @@ class TestPurchasesAlignment(unittest.TestCase):
         cls.unit_cen = "test-uni-" + str(uuid.uuid4())[:8]
         cls.product_cen = "test-prod-" + str(uuid.uuid4())[:8]
         
-        # Insert category
+        # Insert category with unique name to avoid ON CONFLICT returning None
         cat_id = execute(
             "INSERT INTO categorias (nombre, cen, code) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING RETURNING id",
-            ("Categoria Test Align", cls.category_cen, "CAT-ALIGN")
+            (f"Cat Test Align {cls.category_cen}", cls.category_cen, f"CAT-{cls.category_cen}".upper())
         )
         if not cat_id:
             res = query("SELECT id FROM categorias WHERE cen = %s", (cls.category_cen,), fetch='one')
             cat_id = res['id'] if res else 1
             
-        # Insert unit
+        # Insert unit with unique name
         uni_id = execute(
             "INSERT INTO unidades (nombre, cen, code) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING RETURNING id",
-            ("Unidad Test Align", cls.unit_cen, "UNI-ALIGN")
+            (f"Uni Test Align {cls.unit_cen}", cls.unit_cen, f"UNI-{cls.unit_cen}".upper())
         )
         if not uni_id:
             res = query("SELECT id FROM unidades WHERE cen = %s", (cls.unit_cen,), fetch='one')
             uni_id = res['id'] if res else 1
             
-        # Insert product
+        # Insert product with unique name
         prod_id = execute('''
             INSERT INTO productos (nombre, categoria_id, unidad_id, precio, stock, activo, agotado, cen, code, station_code)
             VALUES (%s, %s, %s, 10.0, 0, 1, 0, %s, %s, 'COCINA')
             ON CONFLICT DO NOTHING RETURNING id
-        ''', ("Producto Test Align", cat_id, uni_id, cls.product_cen, "PROD-ALIGN"))
+        ''', (f"Prod Test Align {cls.product_cen}", cat_id, uni_id, cls.product_cen, f"PROD-{cls.product_cen}".upper()))
         if not prod_id:
             res = query("SELECT id FROM productos WHERE cen = %s", (cls.product_cen,), fetch='one')
             prod_id = res['id'] if res else 1
