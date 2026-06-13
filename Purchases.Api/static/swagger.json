@@ -1,0 +1,48 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Purchases API",
+    "description": "Microservicio de gestión de compras y proveedores del sistema PDV Restaurante.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5229",
+      "description": "Servidor local de desarrollo"
+    }
+  ],
+  "paths": {
+    "/api/purchases/companies/{company_cen}/orders": {
+      "get": {
+        "summary": "Obtener órdenes de compra",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Lista de órdenes." }
+        }
+      }
+    },
+    "/api/purchases/companies/{company_cen}/suppliers": {
+      "get": {
+        "summary": "Listar proveedores",
+        "parameters": [
+          {
+            "name": "company_cen",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Lista de proveedores." }
+        }
+      }
+    }
+  }
+}
