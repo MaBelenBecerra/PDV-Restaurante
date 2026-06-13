@@ -6,10 +6,10 @@
 ### Sección 1 — Despliegue en AWS
 
 **1.1 URLs en producción**
-- Mi módulo (Inventory/Sales/Purchases): `172.31.30.57::5000` (IP Privada / AWS)
-- Mi módulo (Swagger): `http://[AWS_PUBLIC_IP]:5143/swagger` (Inventory)
-- Mi módulo (Swagger): `http://[AWS_PUBLIC_IP]:5074/swagger` (Sales)
-- Mi módulo (Swagger): `http://[AWS_PUBLIC_IP]:5085/swagger` (Purchases)
+- Mi módulo (Inventory/Sales/Purchases): `172.31.30.57:5000` (IP Privada / AWS)
+- Mi módulo (Swagger): `http://54.167.127.197:5143/swagger` (Inventory)
+- Mi módulo (Swagger): `http://54.167.127.197:5074/swagger` (Sales)
+- Mi módulo (Swagger): `http://54.167.127.197:5085/swagger` (Purchases)
 - Henrry Coronado (módulo Inventario): `http://98.89.24.229:5143/swagger/index.html`
 - Jean Paul Cabrera (módulo Ventas): `http://3.144.161.11:5074/swagger/index.html`
 
@@ -171,6 +171,6 @@ URL del Swagger de cada módulo:
 
 | Módulo | URL Swagger |
 |---|---|
-| Inventario | `http://[AWS_IP]:5143/swagger` |
-| Ventas | `http://[AWS_IP]:5074/swagger` |
-| Compras | `http://[AWS_IP]:5085/swagger` |
+| Inventario | `http://98.89.24.229:5143/swagger` |
+| Ventas | `http://3.144.161.11:5074/swagger` |
+| Compras | `http://54.167.127.197:5085/swagger` |
