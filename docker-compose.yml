@@ -10,8 +10,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/1-init.sql
-      - ./database/seed.sql:/docker-entrypoint-initdb.d/2-seed.sql
+      - ./database:/docker-entrypoint-initdb.d
 
   inventory-api:
     build: ./Inventory.Api
@@ -28,7 +27,7 @@ services:
     build: ./Purchases.Api
     container_name: purchase-api-srv
     ports:
-      - "5229:5229"
+      - "5085:5085"
     environment:
       - DB_CONNECTION_STRING=${DB_CONNECTION_STRING}
       - INVENTORY_API_URL=${INVENTORY_API_URL}
