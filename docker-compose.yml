@@ -27,7 +27,7 @@ services:
     build: ./Purchases.Api
     container_name: purchase-api-srv
     ports:
-      - "5085:5085"
+      - "5085:5229"
     environment:
       - DB_CONNECTION_STRING=${DB_CONNECTION_STRING}
       - INVENTORY_API_URL=${INVENTORY_API_URL}
