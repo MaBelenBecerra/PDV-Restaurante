@@ -7,8 +7,8 @@ from werkzeug.exceptions import HTTPException
 
 app = Flask(__name__)
 
-# Configure CORS to accept localhost:5173 (Vite frontend) and localhost:3000
-CORS(app, origins=['http://localhost:5173', 'http://localhost:3000'])
+# Configure CORS to allow all origins
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Database verification on startup disabled (trusted connection)
 

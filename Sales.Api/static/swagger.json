@@ -5,12 +5,6 @@
     "description": "Microservicio de ventas, facturación, comensales, KDS (cocina/bar) y dashboard analítico del sistema PDV Restaurante.",
     "version": "1.0.0"
   },
-  "servers": [
-    {
-      "url": "http://localhost:5074",
-      "description": "Servidor local de desarrollo"
-    }
-  ],
   "paths": {
     "/api/sales/companies/{company_cen}/tickets": {
       "get": {

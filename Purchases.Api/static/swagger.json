@@ -5,12 +5,6 @@
     "description": "Microservicio de gestión de compras y proveedores del sistema PDV Restaurante.",
     "version": "1.0.0"
   },
-  "servers": [
-    {
-      "url": "http://localhost:5229",
-      "description": "Servidor local de desarrollo"
-    }
-  ],
   "paths": {
     "/api/purchases/companies/{company_cen}/orders": {
       "get": {
