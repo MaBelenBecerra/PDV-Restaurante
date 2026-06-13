@@ -11,18 +11,41 @@ DB_PORT = os.environ.get("DB_PORT", "5432")
 DB_NAME = os.environ.get("DB_NAME", "pdv_restaurante")
 DB_USER = os.environ.get("DB_USER", "postgres")
 DB_PASSWORD = os.environ.get("DB_PASSWORD", "postgres")
-DB_SEARCH_PATH = os.environ.get("DB_SEARCH_PATH", "public")
+DB_SEARCH_PATH = os.environ.get("DB_SEARCH_PATH", "ventas,inventario,public")
 
 def get_db():
     """Create a database connection with autocommit enabled and set search path."""
-    conn = psycopg2.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        database=DB_NAME,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        options=f"-c search_path={DB_SEARCH_PATH}"
-    )
+    conn_str = os.environ.get("DB_CONNECTION_STRING")
+    if conn_str:
+        params = {}
+        for part in conn_str.split(';'):
+            if '=' in part:
+                key, val = part.split('=', 1)
+                key = key.strip().lower()
+                val = val.strip()
+                if key == 'host':
+                    params['host'] = val
+                elif key == 'port':
+                    params['port'] = val
+                elif key == 'database' or key == 'dbname':
+                    params['database'] = val
+                elif key == 'username' or key == 'user':
+                    params['user'] = val
+                elif key == 'password':
+                    params['password'] = val
+        conn = psycopg2.connect(
+            options=f"-c search_path={DB_SEARCH_PATH}",
+            **params
+        )
+    else:
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            database=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            options=f"-c search_path={DB_SEARCH_PATH}"
+        )
     return conn
 
 def query(sql, params=None, fetch='all'):

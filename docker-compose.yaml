@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: sistemagestion-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret_password}
+      POSTGRES_DB: ${DB_NAME:-sistemagestion}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  inventory-api:
+    build: ./Inventory.Api
+    container_name: inventory-api-srv
+    ports:
+      - "5143:8080"
+    environment:
+      - DB_CONNECTION_STRING=${DB_CONNECTION_STRING}
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
+    depends_on:
+      - postgres-db
+
+  purchase-api:
+    build: ./Purchases.Api
+    container_name: purchase-api-srv
+    ports:
+      - "5085:8080"
+    environment:
+      - DB_CONNECTION_STRING=${DB_CONNECTION_STRING}
+      - INVENTORY_API_URL=${INVENTORY_API_URL}
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
+    depends_on:
+      - postgres-db
+
+  sale-api:
+    build: ./Sales.Api
+    container_name: sale-api-srv
+    ports:
+      - "5074:8080"
+    environment:
+      - DB_CONNECTION_STRING=${DB_CONNECTION_STRING}
+      - INVENTORY_API_URL=${INVENTORY_API_URL}
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
+    depends_on:
+      - postgres-db
+
+volumes:
+  pgdata:

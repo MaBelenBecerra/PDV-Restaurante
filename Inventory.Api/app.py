@@ -1,7 +1,9 @@
-from flask import Flask
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from database import init_db
 from routes.inventory import bp as inventory_bp
+import uuid
+from werkzeug.exceptions import HTTPException
 
 app = Flask(__name__)
 
@@ -11,12 +13,56 @@ CORS(app, origins=['http://localhost:5173', 'http://localhost:3000'])
 # Initialize database
 init_db()
 
+@app.errorhandler(Exception)
+def handle_exception(e):
+    # Pass through HTTP exceptions
+    if isinstance(e, HTTPException):
+        response = jsonify({
+            "status": e.code,
+            "title": e.name,
+            "detail": e.description,
+            "instance": request.path,
+            "traceId": "00-" + str(uuid.uuid4())
+        })
+        response.content_type = "application/problem+json"
+        return response, e.code
+
+    # Map Python exception types to ProblemDetails HTTP status codes
+    status = 500
+    title = "Error interno del servidor"
+    detail = "Ocurrio un error inesperado. Intenta nuevamente o contacta a soporte."
+    
+    e_str = str(e).lower()
+    if isinstance(e, KeyError) or isinstance(e, FileNotFoundError) or "not found" in e_str:
+        status = 404
+        title = "Recurso no encontrado"
+        detail = str(e)
+    elif isinstance(e, ValueError) or isinstance(e, TypeError) or "invalid" in e_str:
+        status = 400
+        title = "Argumento invalido"
+        detail = str(e)
+    elif isinstance(e, PermissionError):
+        status = 403
+        title = "Acceso no autorizado"
+        detail = str(e)
+        
+    response = jsonify({
+        "status": status,
+        "title": title,
+        "detail": detail,
+        "instance": request.path,
+        "traceId": "00-" + str(uuid.uuid4())
+    })
+    response.content_type = "application/problem+json"
+    return response, status
+
 # Register blueprints
 app.register_blueprint(inventory_bp)
 
 @app.route('/health', methods=['GET'])
 def health():
     return {'status': 'ok', 'service': 'inventory-api'}, 200
+
 
 @app.route('/swagger', methods=['GET'])
 @app.route('/swagger/', methods=['GET'])
@@ -69,6 +115,26 @@ def serve_swagger_json():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     static_dir = os.path.join(current_dir, 'static')
     return send_from_directory(static_dir, 'swagger.json')
+
+@app.route('/api/test-exception/keynotfound')
+def test_keynotfound():
+    raise KeyError("El producto solicitado no existe.")
+
+@app.route('/api/test-exception/argument')
+def test_argument():
+    raise ValueError("El nombre del producto no puede estar vacio.")
+
+@app.route('/api/test-exception/invalidoperation')
+def test_invalidoperation():
+    raise ValueError("No se puede realizar esta operacion en el estado actual.")
+
+@app.route('/api/test-exception/unauthorized')
+def test_unauthorized():
+    raise PermissionError("No tiene permisos para modificar este recurso.")
+
+@app.route('/api/test-exception/generic')
+def test_generic():
+    raise Exception("Ocurrio un error inesperado. Intenta nuevamente o contacta a soporte.")
 
 if __name__ == '__main__':
     app.run(debug=True, port=5143, host='0.0.0.0')

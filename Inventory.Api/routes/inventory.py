@@ -1,9 +1,31 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
 import uuid
 import datetime
+import queue
+import threading
+import json
 from database import query, execute
 
 bp = Blueprint('inventory', __name__)
+
+restock_lock = threading.Lock()
+restock_subscribers = []  # List of dicts: {"company_cen": str, "queue": queue.Queue}
+
+def broadcast_restock(company_cen, product_cen, product_code, product_name, quantity, new_stock, warehouse_cen):
+    event = {
+        "companyCen": company_cen,
+        "productCen": product_cen,
+        "productCode": product_code,
+        "productName": product_name,
+        "quantity": float(quantity),
+        "newStock": float(new_stock),
+        "warehouseCen": warehouse_cen,
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
+    }
+    with restock_lock:
+        for sub in restock_subscribers:
+            if sub["company_cen"].lower() == company_cen.lower():
+                sub["queue"].put(event)
 
 def get_company(company_cen):
     """Retrieve active company by CEN GUID, auto-creating it if missing for seamless interoperability."""
@@ -620,6 +642,32 @@ def stock_consume(company_cen):
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
+@bp.route('/api/inventory/companies/<company_cen>/restock-events', methods=['GET'])
+def restock_events(company_cen):
+    def event_stream():
+        q = queue.Queue()
+        with restock_lock:
+            restock_subscribers.append({"company_cen": company_cen, "queue": q})
+        try:
+            while True:
+                try:
+                    event = q.get(timeout=15)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except queue.Empty:
+                    yield ": keep-alive\n\n"
+        finally:
+            with restock_lock:
+                for sub in list(restock_subscribers):
+                    if sub["queue"] is q:
+                        restock_subscribers.remove(sub)
+                        break
+
+    return Response(event_stream(), content_type='text/event-stream', headers={
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
+    })
+
 @bp.route('/api/inventory/companies/<company_cen>/stock/increase', methods=['POST'])
 def stock_increase(company_cen):
     try:
@@ -631,12 +679,22 @@ def stock_increase(company_cen):
         qty = data.get('quantity', 0)
         notes = data.get('notes', 'Stock adjustment')
         
-        prod = query("SELECT id, stock FROM productos WHERE cen = %s", (product_cen,), fetch='one')
+        prod = query("SELECT id, name, code, stock FROM productos WHERE cen = %s", (product_cen,), fetch='one')
         if not prod:
             return jsonify({'error': 'Product not found'}), 404
             
         execute("UPDATE productos SET stock = stock + %s WHERE cen = %s", (qty, product_cen))
         execute("INSERT INTO ajustes_stock (producto_id, tipo, cantidad, motivo, creado_en) VALUES (%s, 'entrada', %s, %s, CURRENT_TIMESTAMP)", (prod['id'], qty, notes))
+        
+        broadcast_restock(
+            company_cen=company_cen,
+            product_cen=product_cen,
+            product_code=prod['code'] or product_cen,
+            product_name=prod['name'] or "Producto",
+            quantity=qty,
+            new_stock=prod['stock'] + qty,
+            warehouse_cen=data.get('warehouseCen') or 'alm-cen-guid-1'
+        )
         
         return jsonify({'message': 'Stock increased successfully', 'newStock': prod['stock'] + qty})
     except Exception as e:
@@ -656,7 +714,7 @@ def register_stock_adjustment(company_cen):
         if not product_cen: return jsonify({'error': 'Product CEN is required'}), 400
         if qty == 0: return jsonify({'error': 'Quantity must not be 0'}), 400
         
-        prod = query("SELECT id, stock FROM productos WHERE cen = %s", (product_cen,), fetch='one')
+        prod = query("SELECT id, name, code, stock FROM productos WHERE cen = %s", (product_cen,), fetch='one')
         if not prod: return jsonify({'error': 'Product not found'}), 404
         
         tipo = 'entrada' if qty > 0 else 'salida'
@@ -673,6 +731,15 @@ def register_stock_adjustment(company_cen):
         
         if tipo == 'entrada':
             execute("UPDATE productos SET stock = stock + %s WHERE id = %s", (abs_qty, prod['id']))
+            broadcast_restock(
+                company_cen=company_cen,
+                product_cen=product_cen,
+                product_code=prod['code'] or product_cen,
+                product_name=prod['name'] or "Producto",
+                quantity=abs_qty,
+                new_stock=prod['stock'] + abs_qty,
+                warehouse_cen=data.get('warehouseCen') or 'alm-cen-guid-1'
+            )
         else:
             execute("UPDATE productos SET stock = stock - %s WHERE id = %s", (abs_qty, prod['id']))
             
@@ -793,7 +860,7 @@ def create_document(company_cen):
             if not prod_cen or qty == 0:
                 continue
                 
-            prod = query("SELECT id, stock FROM productos WHERE cen = %s", (prod_cen,), fetch='one')
+            prod = query("SELECT id, name, code, stock FROM productos WHERE cen = %s", (prod_cen,), fetch='one')
             if not prod:
                 continue
                 
@@ -815,6 +882,15 @@ def create_document(company_cen):
             
             if qty > 0:
                 execute("UPDATE productos SET stock = stock + %s WHERE id = %s", (abs_qty, prod['id']))
+                broadcast_restock(
+                    company_cen=company_cen,
+                    product_cen=prod_cen,
+                    product_code=prod['code'] or prod_cen,
+                    product_name=prod['name'] or "Producto",
+                    quantity=abs_qty,
+                    new_stock=prod['stock'] + abs_qty,
+                    warehouse_cen=warehouse_cen
+                )
             else:
                 execute("UPDATE productos SET stock = stock - %s WHERE id = %s", (abs_qty, prod['id']))
                 

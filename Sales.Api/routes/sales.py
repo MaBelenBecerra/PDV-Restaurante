@@ -245,7 +245,7 @@ def sales_add_ticket_item(company_cen, ticket_cen):
             }
         }), 201
     except DownstreamServiceError as e:
-        return jsonify({'error': str(e)}), e.status_code
+        raise
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -308,7 +308,7 @@ def sales_update_ticket_item(company_cen, ticket_cen, item_cen):
             }
         })
     except DownstreamServiceError as e:
-        return jsonify({'error': str(e)}), e.status_code
+        raise
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -410,7 +410,7 @@ def sales_pay_ticket(company_cen, ticket_cen):
             'amount': float(amount)
         })
     except DownstreamServiceError as e:
-        return jsonify({'error': str(e)}), e.status_code
+        raise
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -604,6 +604,51 @@ def sales_dashboard_daily(company_cen):
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
+@bp.route('/api/sales/companies/<company_cen>/dashboard/monthly', methods=['GET'])
+def sales_dashboard_monthly(company_cen):
+    try:
+        c = get_company(company_cen)
+        if not c: return jsonify({'error': 'Company not found'}), 404
+        
+        import datetime
+        now = datetime.datetime.utcnow()
+        
+        # Current month boundary
+        start_current = datetime.datetime(now.year, now.month, 1, 0, 0, 0)
+        if now.month == 12:
+            start_next = datetime.datetime(now.year + 1, 1, 1, 0, 0, 0)
+        else:
+            start_next = datetime.datetime(now.year, now.month + 1, 1, 0, 0, 0)
+            
+        # Previous month boundary
+        if now.month == 1:
+            start_prev = datetime.datetime(now.year - 1, 12, 1, 0, 0, 0)
+        else:
+            start_prev = datetime.datetime(now.year, now.month - 1, 1, 0, 0, 0)
+        end_prev = start_current
+        
+        curr_total_row = query('''
+            SELECT SUM(monto) as total
+            FROM pagos
+            WHERE creado_en >= %s AND creado_en < %s
+        ''', (start_current, start_next), fetch='one')
+        
+        prev_total_row = query('''
+            SELECT SUM(monto) as total
+            FROM pagos
+            WHERE creado_en >= %s AND creado_en < %s
+        ''', (start_prev, end_prev), fetch='one')
+        
+        curr_total = curr_total_row['total'] if (curr_total_row and curr_total_row['total'] is not None) else 0.0
+        prev_total = prev_total_row['total'] if (prev_total_row and prev_total_row['total'] is not None) else 0.0
+        
+        return jsonify({
+            'currentMonthSales': float(curr_total),
+            'previousMonthSales': float(prev_total)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
 @bp.route('/api/sales/companies/<company_cen>/dashboard/top-products', methods=['GET'])
 def sales_dashboard_top_products(company_cen):
     try:
@@ -659,7 +704,7 @@ def sales_get_catalog_products(company_cen):
         products = get_sellable_products(company_cen, search, category_cen, page, page_size)
         return jsonify(products)
     except DownstreamServiceError as e:
-        return jsonify({'error': str(e)}), e.status_code
+        raise
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 

@@ -173,6 +173,7 @@ def purchases_create_order(company_cen):
         return jsonify({'error': str(e)}), 400
 
 @bp.route('/api/purchases/companies/<company_cen>/orders/<order_cen>/confirm', methods=['POST'])
+@bp.route('/api/purchases/companies/<company_cen>/orders/<order_cen>/receive', methods=['POST'])
 def purchases_confirm_order(company_cen, order_cen):
     try:
         c = get_company(company_cen)
