@@ -49,7 +49,7 @@ services:
 
   web-app:
     build:
-      context: ./fastinventoryWeb
+      context: ./frontend
       args:
         - VITE_INVENTORY_API_URL=${VITE_INVENTORY_API_URL}
         - VITE_PURCHASE_API_URL=${VITE_PURCHASE_API_URL}
