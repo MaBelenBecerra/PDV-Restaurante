@@ -47,5 +47,20 @@ services:
     depends_on:
       - postgres-db
 
+  web-app:
+    build:
+      context: ./fastinventoryWeb
+      args:
+        - VITE_INVENTORY_API_URL=${VITE_INVENTORY_API_URL}
+        - VITE_PURCHASE_API_URL=${VITE_PURCHASE_API_URL}
+        - VITE_SALE_API_URL=${VITE_SALE_API_URL}
+    container_name: web-page-srv
+    ports:
+      - "3000:80"
+    depends_on:
+      - inventory-api
+      - purchase-api
+      - sale-api
+
 volumes:
   pgdata:
