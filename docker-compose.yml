@@ -52,8 +52,8 @@ services:
       context: ./frontend
       args:
         - VITE_INVENTORY_API_URL=${VITE_INVENTORY_API_URL}
-        - VITE_PURCHASE_API_URL=${VITE_PURCHASE_API_URL}
-        - VITE_SALE_API_URL=${VITE_SALE_API_URL}
+        - VITE_PURCHASES_API_URL=${VITE_PURCHASES_API_URL}
+        - VITE_SALES_API_URL=${VITE_SALES_API_URL}
     container_name: web-page-srv
     ports:
       - "3000:80"
