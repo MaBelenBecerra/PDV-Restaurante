@@ -1,12 +1,23 @@
-function normalizeApiBaseUrl(baseUrl, apiPrefix) {
-  const normalizedBaseUrl = (baseUrl || '').replace(/\/$/, '')
-  if (!normalizedBaseUrl) return `http://localhost${apiPrefix}`
-  return normalizedBaseUrl.endsWith(apiPrefix) ? normalizedBaseUrl : `${normalizedBaseUrl}${apiPrefix}`
+function readEnvValue(keys) {
+  for (const key of keys) {
+    const value = import.meta.env[key]
+    if (typeof value === 'string' && value.trim()) {
+      return value
+    }
+  }
+  return ''
 }
 
-const INVENTORY_API_URL = normalizeApiBaseUrl(import.meta.env.VITE_INVENTORY_API_URL, '/api/inventory')
-const SALES_API_URL = normalizeApiBaseUrl(import.meta.env.VITE_SALES_API_URL, '/api/sales')
-const PURCHASES_API_URL = normalizeApiBaseUrl(import.meta.env.VITE_PURCHASES_API_URL, '/api/purchases')
+function normalizeApiBaseUrl(baseUrl, apiPrefix, defaultPort) {
+  const normalizedBaseUrl = (baseUrl || '').replace(/\/$/, '')
+  const fallbackBaseUrl = `${window.location.protocol}//${window.location.hostname}:${defaultPort}`
+  const resolvedBaseUrl = normalizedBaseUrl || fallbackBaseUrl
+  return resolvedBaseUrl.endsWith(apiPrefix) ? resolvedBaseUrl : `${resolvedBaseUrl}${apiPrefix}`
+}
+
+const INVENTORY_API_URL = normalizeApiBaseUrl(readEnvValue(['VITE_INVENTORY_API_URL']), '/api/inventory', '5143')
+const SALES_API_URL = normalizeApiBaseUrl(readEnvValue(['VITE_SALES_API_URL', 'VITE_SALE_API_URL']), '/api/sales', '5074')
+const PURCHASES_API_URL = normalizeApiBaseUrl(readEnvValue(['VITE_PURCHASES_API_URL', 'VITE_PURCHASE_API_URL']), '/api/purchases', '5229')
 
 function getApiUrl(endpoint) {
   if (endpoint.startsWith('/inventory')) {
@@ -21,6 +32,9 @@ function getApiUrl(endpoint) {
 
 // Cache company CEN in localStorage
 let cachedCompanyCen = localStorage.getItem('companyCen')
+if (cachedCompanyCen === 'undefined' || cachedCompanyCen === 'null' || !cachedCompanyCen?.trim()) {
+  cachedCompanyCen = null
+}
 
 // Helper function to resolve active company CEN dynamically
 async function getCompanyCen() {
@@ -28,7 +42,7 @@ async function getCompanyCen() {
   try {
     const res = await apiCall('/inventory/companies')
     if (res && res.length > 0) {
-      cachedCompanyCen = res[0].cen
+      cachedCompanyCen = res[0].companyCen || res[0].cen
       localStorage.setItem('companyCen', cachedCompanyCen)
       return cachedCompanyCen
     }
