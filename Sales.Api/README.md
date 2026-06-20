@@ -132,6 +132,9 @@ GET    /api/sales/companies/{company_cen}/tickets
 POST   /api/sales/companies/{company_cen}/tickets
 GET    /api/sales/companies/{company_cen}/tickets/{ticket_cen}
 POST   /api/sales/companies/{company_cen}/tickets/{ticket_cen}/cancel
+GET    /api/sales/companies/{company_cen}/dashboard/daily-sales
+GET    /api/sales/companies/{company_cen}/dashboard/top-products
+GET    /api/sales/companies/{company_cen}/dashboard/kds-status
 ```
 
 ### Items (con Validación Inventario)

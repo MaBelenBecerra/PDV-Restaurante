@@ -564,6 +564,54 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /api/sales/companies/{company_cen}/dashboard/top-products:
+    get:
+      tags:
+        - Sales - Dashboard
+      summary: Obtener productos más vendidos
+      operationId: getTopProductsDashboard
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+      responses:
+        '200':
+          description: Lista de productos más vendidos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    productCen:
+                      type: string
+                    productName:
+                      type: string
+                    quantity:
+                      type: integer
+
+  /api/sales/companies/{company_cen}/dashboard/kds-status:
+    get:
+      tags:
+        - Sales - Dashboard
+      summary: Obtener estado agregado del KDS
+      operationId: getKdsStatusDashboard
+      parameters:
+        - $ref: '#/components/parameters/CompanyCen'
+      responses:
+        '200':
+          description: Estado agregado del KDS
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                    count:
+                      type: integer
+
   # SALES API - PAYMENTS (Consumo Stock)
   /api/sales/companies/{company_cen}/tickets/{ticket_cen}/payment:
     post:

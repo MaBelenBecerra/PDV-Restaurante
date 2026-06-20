@@ -74,6 +74,46 @@ def sales_daily_dashboard(company_cen):
     res = query("SELECT COALESCE(SUM(total), 0) as totalSales, COUNT(*) as ticketsCount, COALESCE(AVG(total), 0) as averageTicket FROM tickets WHERE estado = 'pagado' AND pagado_en::date = CURRENT_DATE", fetch='one')
     return jsonify({'totalSales': float(res['totalSales']), 'ticketsCount': int(res['ticketsCount']), 'averageTicket': float(res['averageTicket'])})
 
+@bp.route('/api/sales/companies/<company_cen>/dashboard/top-products', methods=['GET'])
+def sales_top_products_dashboard(company_cen):
+    rows = query(
+        """
+        SELECT
+            p.cen as productCen,
+            p.nombre as productName,
+            COALESCE(SUM(ti.cantidad), 0) as quantity
+        FROM tickets t
+        JOIN ticket_items ti ON ti.ticket_id = t.id
+        JOIN productos p ON p.id = ti.producto_id
+        WHERE t.estado = 'pagado'
+        GROUP BY p.cen, p.nombre
+        ORDER BY quantity DESC, p.nombre ASC
+        LIMIT 10
+        """,
+        fetch='all'
+    )
+    return jsonify(rows)
+
+@bp.route('/api/sales/companies/<company_cen>/dashboard/kds-status', methods=['GET'])
+def sales_kds_status_dashboard(company_cen):
+    rows = query(
+        """
+        SELECT
+            CASE ci.estado
+                WHEN 'pendiente' THEN 'PENDING'
+                WHEN 'en_preparacion' THEN 'IN_PROGRESS'
+                WHEN 'listo' THEN 'READY'
+                ELSE UPPER(ci.estado)
+            END as status,
+            COUNT(*) as count
+        FROM comanda_items ci
+        GROUP BY ci.estado
+        ORDER BY status
+        """,
+        fetch='all'
+    )
+    return jsonify(rows)
+
 @bp.route('/api/sales/companies/<company_cen>/dashboard/monthly', methods=['GET'])
 def sales_monthly_dashboard(company_cen):
     curr = query("SELECT SUM(total) as total FROM tickets WHERE estado = 'pagado' AND date_trunc('month', pagado_en) = date_trunc('month', CURRENT_DATE)", fetch='one')

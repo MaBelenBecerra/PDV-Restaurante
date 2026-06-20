@@ -252,6 +252,44 @@
         }
       }
     },
+    "/api/sales/companies/{companyCen}/dashboard/top-products": {
+      "get": {
+        "tags": ["DashboardContract"],
+        "summary": "Obtiene los productos más vendidos",
+        "parameters": [
+          { "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/TopProductDashboardDto" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sales/companies/{companyCen}/dashboard/kds-status": {
+      "get": {
+        "tags": ["DashboardContract"],
+        "summary": "Obtiene el estado agregado del KDS",
+        "parameters": [
+          { "name": "companyCen", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/KdsStatusDashboardDto" } }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sales/companies/{companyCen}/dashboard/monthly": {
       "get": {
         "tags": ["DashboardContract"],
@@ -496,6 +534,8 @@
       "PrintTicketContractResponse": { "type": "object", "properties": { "fileContents": { "type": "string" } } },
       "TicketTotalsContractDto": { "type": "object", "properties": { "ticketCen": { "type": "string" }, "subtotal": { "type": "number" }, "taxAmount": { "type": "number" }, "total": { "type": "number" } } },
       "DailySalesDashboardDto": { "type": "object", "properties": { "totalSales": { "type": "number" }, "ticketsCount": { "type": "integer" }, "averageTicket": { "type": "number" } } },
+      "TopProductDashboardDto": { "type": "object", "properties": { "productCen": { "type": "string" }, "productName": { "type": "string" }, "quantity": { "type": "integer" } } },
+      "KdsStatusDashboardDto": { "type": "object", "properties": { "status": { "type": "string" }, "count": { "type": "integer" } } },
       "MonthlySalesDashboardDto": { "type": "object", "properties": { "currentMonthTotal": { "type": "number" }, "previousMonthTotal": { "type": "number" }, "growthPercentage": { "type": "number" } } },
       "KdsTeamContractResponse": { "type": "object", "properties": { "teamCen": { "type": "string" }, "name": { "type": "string" } } },
       "CreateKdsTeamContractRequest": { "type": "object", "properties": { "name": { "type": "string" } } },
