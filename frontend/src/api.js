@@ -15,6 +15,8 @@ function normalizeApiBaseUrl(baseUrl, apiPrefix, defaultPort) {
   return resolvedBaseUrl.endsWith(apiPrefix) ? resolvedBaseUrl : `${resolvedBaseUrl}${apiPrefix}`
 }
 
+const DEFAULT_COMPANY_CEN = '9f2a4e4e-ac9d-46a4-98ea-412d1c168d12'
+
 const INVENTORY_API_URL = normalizeApiBaseUrl(readEnvValue(['VITE_INVENTORY_API_URL']), '/api/inventory', '5143')
 const SALES_API_URL = normalizeApiBaseUrl(readEnvValue(['VITE_SALES_API_URL', 'VITE_SALE_API_URL']), '/api/sales', '5074')
 const PURCHASES_API_URL = normalizeApiBaseUrl(readEnvValue(['VITE_PURCHASES_API_URL', 'VITE_PURCHASE_API_URL']), '/api/purchases', '5229')
@@ -28,6 +30,10 @@ function getApiUrl(endpoint) {
     return `${PURCHASES_API_URL}${endpoint.substring(10)}`
   }
   return `${INVENTORY_API_URL}${endpoint}`
+}
+
+function sanitizeEndpoint(endpoint) {
+  return endpoint.replace(/\/companies\/(undefined|null)(?=\/|$)/g, `/companies/${DEFAULT_COMPANY_CEN}`)
 }
 
 // Cache company CEN in localStorage
@@ -49,13 +55,12 @@ async function getCompanyCen() {
   } catch (e) {
     console.error("Failed to load company CEN", e)
   }
-  // Fallback to our seeded company CEN
-  return '9f2a4e4e-ac9d-46a4-98ea-412d1c168d12'
+  return DEFAULT_COMPANY_CEN
 }
 
 // Helper function for API calls
 async function apiCall(endpoint, options = {}) {
-  const url = getApiUrl(endpoint)
+  const url = getApiUrl(sanitizeEndpoint(endpoint))
   const headers = {
     'Content-Type': 'application/json',
     ...options.headers,
