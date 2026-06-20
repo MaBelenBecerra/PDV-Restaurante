@@ -1,6 +1,12 @@
-const INVENTORY_API_URL = import.meta.env.VITE_INVENTORY_API_URL || 'http://localhost:5143/api/inventory'
-const SALES_API_URL = import.meta.env.VITE_SALES_API_URL || 'http://localhost:5074/api/sales'
-const PURCHASES_API_URL = import.meta.env.VITE_PURCHASES_API_URL || 'http://localhost:5229/api/purchases'
+function normalizeApiBaseUrl(baseUrl, apiPrefix) {
+  const normalizedBaseUrl = (baseUrl || '').replace(/\/$/, '')
+  if (!normalizedBaseUrl) return `http://localhost${apiPrefix}`
+  return normalizedBaseUrl.endsWith(apiPrefix) ? normalizedBaseUrl : `${normalizedBaseUrl}${apiPrefix}`
+}
+
+const INVENTORY_API_URL = normalizeApiBaseUrl(import.meta.env.VITE_INVENTORY_API_URL, '/api/inventory')
+const SALES_API_URL = normalizeApiBaseUrl(import.meta.env.VITE_SALES_API_URL, '/api/sales')
+const PURCHASES_API_URL = normalizeApiBaseUrl(import.meta.env.VITE_PURCHASES_API_URL, '/api/purchases')
 
 function getApiUrl(endpoint) {
   if (endpoint.startsWith('/inventory')) {
