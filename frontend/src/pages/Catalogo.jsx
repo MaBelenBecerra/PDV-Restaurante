@@ -410,7 +410,7 @@ export default function Catalogo({ showToast }) {
                   name="tasa_impuesto"
                   step="0.01"
                   min="0"
-                  max="1"
+                  max="100"
                   defaultValue={(config.tasa_impuesto * 100).toFixed(2)}
                   className="flex-1 px-4 py-2 border rounded-lg"
                   required

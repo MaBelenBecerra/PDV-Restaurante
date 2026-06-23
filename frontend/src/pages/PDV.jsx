@@ -95,7 +95,8 @@ export default function PDV({ showToast }) {
       if (existingItem) {
         const newQty = existingItem.cantidad + 1
         const result = await editarItem(selectedTicketId, existingItem.id, {
-          cantidad: newQty
+          cantidad: newQty,
+          nota: existingItem.nota || ''
         })
         setSelectedTicket(prev => ({
           ...prev,
@@ -129,7 +130,8 @@ export default function PDV({ showToast }) {
 
     try {
       const result = await editarItem(selectedTicketId, item.id, {
-        cantidad: newQuantity
+        cantidad: newQuantity,
+        nota: item.nota || ''
       })
       setSelectedTicket(prev => ({
         ...prev,
@@ -145,7 +147,7 @@ export default function PDV({ showToast }) {
 
   const handleChangeNota = async (item, nota) => {
     try {
-      const result = await editarItem(selectedTicketId, item.id, { nota })
+      const result = await editarItem(selectedTicketId, item.id, { cantidad: item.cantidad, nota })
       setSelectedTicket(prev => ({
         ...prev,
         items: prev.items.map(i => i.id === item.id ? result.item : i)

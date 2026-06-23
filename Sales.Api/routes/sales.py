@@ -27,7 +27,14 @@ def ensure_local_product(company_cen, product_cen):
 
 @bp.route('/api/sales/companies/<company_cen>/tickets', methods=['GET'])
 def sales_get_tickets(company_cen):
-    tickets = query("SELECT cen as ticketCen, id as dailyNumber, CASE WHEN estado='abierto' THEN 'OPEN' WHEN estado='pagado' THEN 'PAID' ELSE 'CANCELLED' END as status, creado_en as createdAt, vendor_cen as waiterCen, %s as companyCen, impuesto as taxAmount FROM tickets", (company_cen,))
+    status = request.args.get('status')
+    sql = "SELECT cen as ticketCen, id as dailyNumber, CASE WHEN estado='abierto' THEN 'OPEN' WHEN estado='pagado' THEN 'PAID' ELSE 'CANCELLED' END as status, creado_en as createdAt, mesero as waiterName, vendor_cen as waiterCen, %s as companyCen, impuesto as taxAmount, total FROM tickets"
+    params = [company_cen]
+    if status:
+        status_map = {'OPEN': 'abierto', 'PAID': 'pagado', 'CANCELLED': 'cancelado'}
+        sql += " WHERE estado = %s"
+        params.append(status_map.get(status, status.lower()))
+    tickets = query(sql, tuple(params))
     return jsonify(tickets)
 
 @bp.route('/api/sales/companies/<company_cen>/tickets', methods=['POST'])
@@ -35,8 +42,9 @@ def sales_create_ticket(company_cen):
     data = request.get_json() or {}
     new_cen = str(uuid.uuid4())
     count = query("SELECT COUNT(*) as count FROM tickets", fetch='one')['count']
-    execute("INSERT INTO tickets (mesero, vendor_cen, estado, tasa_impuesto, cen, code) VALUES (%s, %s, 'abierto', 0.13, %s, %s)", ('Mesero', data.get('waiterCen'), new_cen, f"TIC-{count+1:05d}"))
-    return jsonify({'ticketCen': new_cen, 'dailyNumber': count+1, 'status': 'OPEN', 'createdAt': datetime.datetime.now().isoformat(), 'waiterCen': data.get('waiterCen'), 'companyCen': company_cen, 'taxAmount': 0.0}), 201
+    waiter = data.get('mesero') or data.get('waiterName') or data.get('waiterCen') or 'Mesero'
+    execute("INSERT INTO tickets (mesero, vendor_cen, estado, tasa_impuesto, cen, code) VALUES (%s, %s, 'abierto', 0.13, %s, %s)", (waiter, data.get('waiterCen'), new_cen, f"TIC-{count+1:05d}"))
+    return jsonify({'ticketCen': new_cen, 'dailyNumber': count+1, 'status': 'OPEN', 'createdAt': datetime.datetime.now().isoformat(), 'waiterName': waiter, 'waiterCen': data.get('waiterCen'), 'companyCen': company_cen, 'taxAmount': 0.0, 'total': 0.0}), 201
 
 @bp.route('/api/sales/companies/<company_cen>/tickets/<ticket_cen>/items', methods=['GET'])
 def sales_get_ticket_items(company_cen, ticket_cen):
@@ -55,8 +63,17 @@ def sales_add_ticket_item(company_cen, ticket_cen):
 @bp.route('/api/sales/companies/<company_cen>/tickets/<ticket_cen>/items/<item_cen>', methods=['PATCH'])
 def sales_patch_item(company_cen, ticket_cen, item_cen):
     data = request.get_json() or {}
-    execute("UPDATE ticket_items SET cantidad = %s, nota = %s WHERE cen = %s", (data.get('quantity'), data.get('note'), item_cen))
+    current = query("SELECT cantidad, nota FROM ticket_items WHERE cen = %s", (item_cen,), fetch='one')
+    quantity = data.get('quantity', current['cantidad'])
+    note = data.get('note', current['nota'])
+    execute("UPDATE ticket_items SET cantidad = %s, nota = %s, subtotal = precio_unitario * %s WHERE cen = %s", (quantity, note, quantity, item_cen))
     return jsonify({'ticketItemCen': item_cen}), 200
+
+@bp.route('/api/sales/companies/<company_cen>/tickets/<ticket_cen>/items/<item_cen>', methods=['DELETE'])
+def sales_delete_item(company_cen, ticket_cen, item_cen):
+    execute("DELETE FROM ticket_items WHERE cen = %s", (item_cen,))
+    t = query("SELECT cen as ticketCen, subtotal, impuesto as taxAmount, total FROM tickets WHERE cen = %s", (ticket_cen,), fetch='one')
+    return jsonify({'ticketItemCen': item_cen, 'ticket_totals': {'subtotal': float(t['subtotal']), 'impuesto': float(t['taxAmount']), 'total': float(t['total'])}}), 200
 
 @bp.route('/api/sales/companies/<company_cen>/tickets/<ticket_cen>/payment', methods=['POST'])
 def sales_pay_ticket(company_cen, ticket_cen):
@@ -164,7 +181,26 @@ def sales_cancel_ticket(company_cen, ticket_cen):
 
 @bp.route('/api/sales/companies/<company_cen>/tickets/<ticket_cen>/send', methods=['POST'])
 def sales_send_ticket(company_cen, ticket_cen):
-    return jsonify([])
+    ticket = query("SELECT id FROM tickets WHERE cen = %s", (ticket_cen,), fetch='one')
+    if not ticket:
+        return jsonify({'error': 'Ticket not found'}), 404
+    items = query("SELECT ti.id, ti.cen, p.station_code FROM ticket_items ti JOIN productos p ON p.id = ti.producto_id WHERE ti.ticket_id = %s", (ticket['id'],))
+    created = []
+    for item in items:
+        station_type = 'bar' if item.get('station_code') == 'BAR' else 'cocina'
+        station = query("SELECT id FROM estaciones WHERE tipo = %s LIMIT 1", (station_type,), fetch='one')
+        if not station:
+            continue
+        existing = query("SELECT ci.cen FROM comanda_items ci JOIN comandas c ON c.id = ci.comanda_id WHERE c.ticket_id = %s AND ci.ticket_item_id = %s", (ticket['id'], item['id']), fetch='one')
+        if existing:
+            continue
+        command_cen = str(uuid.uuid4())
+        command_number = f"COM-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}-{item['id']}"
+        command_id = execute("INSERT INTO comandas (ticket_id, estacion_id, nro_comanda, estado, cen) VALUES (%s, %s, %s, 'pendiente', %s)", (ticket['id'], station['id'], command_number, command_cen))
+        item_cen = str(uuid.uuid4())
+        execute("INSERT INTO comanda_items (comanda_id, ticket_item_id, estado, cen) VALUES (%s, %s, 'pendiente', %s)", (command_id, item['id'], item_cen))
+        created.append({'commandCen': command_cen, 'ticketItemCen': item_cen})
+    return jsonify(created)
 
 @bp.route('/api/sales/companies/<company_cen>/tickets/<ticket_cen>/print', methods=['GET'])
 def sales_print_ticket(company_cen, ticket_cen):
@@ -174,6 +210,14 @@ def sales_print_ticket(company_cen, ticket_cen):
 def sales_get_totals(company_cen, ticket_cen):
     t = query("SELECT cen as ticketCen, subtotal, impuesto as taxAmount, total FROM tickets WHERE cen = %s", (ticket_cen,), fetch='one')
     return jsonify(t)
+
+@bp.route('/api/sales/companies/<company_cen>/kds/items/<item_cen>/status', methods=['PATCH'])
+def sales_update_kds_item_status(company_cen, item_cen):
+    data = request.get_json() or {}
+    status_map = {'PENDING': 'pendiente', 'IN_PROGRESS': 'en_preparacion', 'READY': 'listo'}
+    status = status_map.get(data.get('status'), data.get('status'))
+    execute("UPDATE comanda_items SET estado = %s, actualizado_en = CURRENT_TIMESTAMP WHERE cen = %s", (status, item_cen))
+    return jsonify({'ticketItemCen': item_cen, 'status': data.get('status')})
 
 @bp.route('/api/sales/payment-methods', methods=['GET'])
 def sales_pay_methods():

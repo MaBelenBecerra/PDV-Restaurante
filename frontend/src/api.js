@@ -84,14 +84,96 @@ async function apiCall(endpoint, options = {}) {
   }
 }
 
+function asArray(value) {
+  if (Array.isArray(value)) return value
+  if (Array.isArray(value?.items)) return value.items
+  if (Array.isArray(value?.data)) return value.data
+  return []
+}
+
+function asNumber(value, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function productId(product) {
+  return product.productCen || product.cen || product.id
+}
+
+function categoryId(category) {
+  return category.categoryCen || category.cen || category.id
+}
+
+function unitId(unit) {
+  return unit.unitCen || unit.cen || unit.id
+}
+
+function ticketId(ticket) {
+  return ticket.ticketCen || ticket.cen || ticket.id
+}
+
+function ticketItemId(item) {
+  return item.ticketItemCen || item.cen || item.id
+}
+
+function mapProduct(product, stockByProduct = new Map()) {
+  const id = productId(product)
+  const stockInfo = stockByProduct.get(id) || {}
+  const stock = asNumber(
+    product.stock ?? product.availableQuantity ?? product.initialStock ?? stockInfo.availableQuantity ?? stockInfo.quantity,
+    0
+  )
+  const status = product.status || (product.active === false ? 'INACTIVE' : 'ACTIVE')
+
+  return {
+    id,
+    nombre: product.name || product.nombre || product.productName || '',
+    categoria_id: product.categoryCen || product.categoria_id || '',
+    unidad_id: product.unitCen || product.unidad_id || '',
+    precio: asNumber(product.salePrice ?? product.price ?? product.precio, 0),
+    stock,
+    activo: status === 'INACTIVE' || product.active === false ? 0 : 1,
+    agotado: product.isOutOfStock || stock <= 0 ? 1 : 0,
+    categoria: product.categoryName || product.category?.name || product.category?.nombre || '',
+    unidad: product.unitName || product.unit?.name || product.unidad?.nombre || '',
+    station_code: product.stationCode || product.station_code
+  }
+}
+
+function mapTicket(ticket, fallback = {}) {
+  const mapStatus = { OPEN: 'abierto', PAID: 'pagado', CANCELLED: 'cancelado' }
+  const status = ticket.status || fallback.status || 'OPEN'
+
+  return {
+    id: ticketId(ticket),
+    mesero: ticket.mesero || ticket.waiterName || ticket.waiterCen || fallback.mesero || 'Mesero',
+    estado: mapStatus[status] || String(status).toLowerCase(),
+    total: asNumber(ticket.total ?? ticket.totalAmount ?? fallback.total, 0),
+    creado_en: ticket.createdAt || ticket.creado_en || fallback.creado_en || new Date().toISOString()
+  }
+}
+
+function mapTotals(totals = {}) {
+  const subtotal = asNumber(totals.subtotal, 0)
+  const tax = asNumber(totals.tax ?? totals.taxAmount ?? totals.impuesto, 0)
+  const total = asNumber(totals.total, subtotal + tax)
+
+  return {
+    subtotal,
+    impuesto: tax,
+    total,
+    tasa_impuesto: subtotal > 0 ? tax / subtotal : 0.13
+  }
+}
+
 // ==========================================
 // CATEGORÍAS
 // ==========================================
 export async function getCategorias() {
   const companyCen = await getCompanyCen()
   const res = await apiCall(`/inventory/companies/${companyCen}/categories`)
-  return res.map(cat => ({
-    id: cat.cen,
+  return asArray(res).map(cat => ({
+    id: categoryId(cat),
     nombre: cat.name
   }))
 }
@@ -103,7 +185,7 @@ export async function crearCategoria(data) {
     body: JSON.stringify({ name: data.nombre })
   })
   return {
-    id: res.cen,
+    id: categoryId(res),
     nombre: res.name
   }
 }
@@ -115,7 +197,7 @@ export async function editarCategoria(id, data) {
     body: JSON.stringify({ name: data.nombre })
   })
   return {
-    id: res.cen,
+    id: categoryId(res),
     nombre: res.name
   }
 }
@@ -126,8 +208,8 @@ export async function editarCategoria(id, data) {
 export async function getUnidades() {
   const companyCen = await getCompanyCen()
   const res = await apiCall(`/inventory/companies/${companyCen}/units`)
-  return res.map(u => ({
-    id: u.cen,
+  return asArray(res).map(u => ({
+    id: unitId(u),
     nombre: u.name
   }))
 }
@@ -139,7 +221,7 @@ export async function crearUnidad(data) {
     body: JSON.stringify({ name: data.nombre })
   })
   return {
-    id: res.cen,
+    id: unitId(res),
     nombre: res.name
   }
 }
@@ -151,7 +233,7 @@ export async function editarUnidad(id, data) {
     body: JSON.stringify({ name: data.nombre })
   })
   return {
-    id: res.cen,
+    id: unitId(res),
     nombre: res.name
   }
 }
@@ -171,20 +253,15 @@ export async function getProductos(filtros = {}) {
     endpoint += '?' + params.toString()
   }
   
-  const res = await apiCall(endpoint)
-  return res.items.map(p => ({
-    id: p.cen,
-    nombre: p.name,
-    categoria_id: p.categoryCen,
-    unidad_id: p.unitCen,
-    precio: p.price,
-    stock: p.stock || 0,
-    activo: p.active ? 1 : 0,
-    agotado: p.isOutOfStock ? 1 : 0,
-    categoria: p.category ? p.category.nombre : '',
-    unidad: p.unidad ? p.unidad.nombre : '',
-    station_code: p.stationCode
-  }))
+  const [productsRes, stockRes] = await Promise.all([
+    apiCall(endpoint),
+    apiCall(`/inventory/companies/${companyCen}/stock`).catch(() => [])
+  ])
+  const stockByProduct = new Map(asArray(stockRes).map(item => [item.productCen, item]))
+
+  return asArray(productsRes)
+    .map(product => mapProduct(product, stockByProduct))
+    .filter(product => filtros.activo == null || product.activo === filtros.activo)
 }
 
 export async function crearProducto(data) {
@@ -195,21 +272,12 @@ export async function crearProducto(data) {
       name: data.nombre,
       categoryCen: data.categoria_id,
       unitCen: data.unidad_id,
-      price: data.precio,
-      stock: data.stock || 0,
+      salePrice: data.precio,
+      initialStock: data.stock || 0,
       stationCode: 'COCINA'
     })
   })
-  return {
-    id: res.cen,
-    nombre: res.name,
-    categoria_id: res.categoryCen,
-    unidad_id: res.unitCen,
-    precio: res.price,
-    stock: res.stock || 0,
-    activo: 1,
-    agotado: 0
-  }
+  return mapProduct({ ...res, categoryCen: data.categoria_id, unitCen: data.unidad_id, salePrice: data.precio, initialStock: data.stock })
 }
 
 export async function editarProducto(id, data) {
@@ -220,19 +288,10 @@ export async function editarProducto(id, data) {
       name: data.nombre,
       categoryCen: data.categoria_id,
       unitCen: data.unidad_id,
-      price: data.precio
+      salePrice: data.precio
     })
   })
-  return {
-    id: res.cen,
-    nombre: res.name,
-    categoria_id: res.categoryCen,
-    unidad_id: res.unitCen,
-    precio: res.price,
-    stock: res.stock || 0,
-    activo: 1,
-    agotado: 0
-  }
+  return mapProduct({ ...res, categoryCen: data.categoria_id, unitCen: data.unidad_id, salePrice: data.precio, stock: data.stock })
 }
 
 export async function toggleActivo(id) {
@@ -243,28 +302,17 @@ export async function toggleActivo(id) {
   
   const res = await apiCall(`/inventory/companies/${companyCen}/products/${id}/status`, {
     method: 'PATCH',
-    body: JSON.stringify({ active: newActive })
+    body: JSON.stringify({ status: newActive ? 'ACTIVE' : 'INACTIVE' })
   })
   return {
-    id: res.cen,
-    activo: res.active ? 1 : 0
+    id: productId(res),
+    activo: res.status === 'ACTIVE' ? 1 : 0
   }
 }
 
 export async function toggleAgotado(id) {
-  const companyCen = await getCompanyCen()
-  const products = await getProductos()
-  const p = products.find(prod => prod.id === id)
-  const newAgotado = p ? !p.agotado : false
-  
-  const res = await apiCall(`/inventory/companies/${companyCen}/products/${id}/status`, {
-    method: 'PATCH',
-    body: JSON.stringify({ isOutOfStock: newAgotado })
-  })
-  return {
-    id: res.cen,
-    agotado: res.isOutOfStock ? 1 : 0
-  }
+  const product = (await getProductos()).find(prod => prod.id === id)
+  return { id, agotado: product?.stock <= 0 ? 1 : 0 }
 }
 
 // ==========================================
@@ -277,21 +325,22 @@ export async function getInventario() {
     getProductos()
   ])
   
-  return stockItems.map(s => {
+  return asArray(stockItems).map(s => {
     const p = products.find(prod => prod.id === s.productCen) || {}
     let estado = 'ok'
-    if (s.quantity <= 0) {
+    const quantity = asNumber(s.availableQuantity ?? s.quantity, 0)
+    if (quantity <= 0) {
       estado = 'agotado'
-    } else if (s.quantity < 5) {
+    } else if (quantity < 5) {
       estado = 'bajo'
     }
     
     return {
       id: s.productCen,
-      nombre: p.nombre || s.productCode,
+      nombre: p.nombre || s.productName || s.productCode,
       categoria: p.categoria || '',
-      unidad: p.unidad || '',
-      stock: s.quantity,
+      unidad: p.unidad || s.unitName || '',
+      stock: quantity,
       estado,
       precio: p.precio || 0.0
     }
@@ -303,9 +352,12 @@ export async function ajustarStock(data) {
   const res = await apiCall(`/inventory/companies/${companyCen}/stock/adjustments`, {
     method: 'POST',
     body: JSON.stringify({
-      productCen: data.producto_id,
-      quantity: data.tipo === 'entrada' ? data.cantidad : -data.cantidad,
-      reason: data.motivo
+      lines: [{
+        productCen: data.producto_id,
+        quantity: data.cantidad,
+        adjustmentType: data.tipo === 'entrada' ? 'INCREASE' : 'DECREASE',
+        reason: data.motivo
+      }]
     })
   })
   return res
@@ -322,65 +374,72 @@ export async function getTickets(estado = '') {
   if (estado === 'cancelado') statusParam = 'CANCELLED'
   
   const res = await apiCall(`/sales/companies/${companyCen}/tickets` + (statusParam ? `?status=${statusParam}` : ''))
-  const map_status = {'OPEN': 'abierto', 'PAID': 'pagado', 'CANCELLED': 'cancelado'}
-  return res.map(t => ({
-    id: t.cen,
-    mesero: t.mesero,
-    estado: map_status[t.status] || t.status.toLowerCase(),
-    total: t.total,
-    creado_en: t.createdAt
-  }))
+  return asArray(res).map(mapTicket)
 }
 
 export async function crearTicket(data) {
   const companyCen = await getCompanyCen()
   const res = await apiCall(`/sales/companies/${companyCen}/tickets`, {
     method: 'POST',
-    body: JSON.stringify({ mesero: data.mesero })
+    body: JSON.stringify({ waiterCen: data.mesero, mesero: data.mesero })
   })
-  return {
-    id: res.cen,
-    mesero: res.mesero,
-    estado: 'abierto',
-    total: 0.0,
-    creado_en: res.createdAt
-  }
+  return mapTicket(res, { mesero: data.mesero, total: 0 })
 }
 
 export async function getTicket(id) {
   const companyCen = await getCompanyCen()
-  const [t, items, totals] = await Promise.all([
-    apiCall(`/sales/companies/${companyCen}/tickets/${id}`),
+  const [tickets, items, totals] = await Promise.all([
+    apiCall(`/sales/companies/${companyCen}/tickets`),
     apiCall(`/sales/companies/${companyCen}/tickets/${id}/items`),
     apiCall(`/sales/companies/${companyCen}/tickets/${id}/totals`)
   ])
+  const t = asArray(tickets).find(ticket => ticketId(ticket) === id) || { ticketCen: id }
   
   const products = await getProductos()
-  const mappedItems = items.map(item => {
+  const mappedItems = asArray(items).map(item => {
     const p = products.find(prod => prod.id === item.productCen) || {}
     return {
-      id: item.cen,
+      id: ticketItemId(item),
       producto_id: item.productCen,
-      nombre: p.nombre || item.productCode,
+      nombre: p.nombre || item.productName || item.productCode,
       categoria: p.categoria || '',
       cantidad: item.quantity,
       precio_unitario: item.unitPrice,
       subtotal: item.quantity * item.unitPrice,
-      nota: item.notes
+      nota: item.note || item.notes || ''
     }
   })
   
-  const map_status = {'OPEN': 'abierto', 'PAID': 'pagado', 'CANCELLED': 'cancelado'}
+  const mappedTicket = mapTicket(t)
+  const mappedTotals = mapTotals(totals)
   return {
-    id: t.cen,
-    mesero: t.mesero,
-    estado: map_status[t.status] || t.status.toLowerCase(),
-    creado_en: t.createdAt,
-    subtotal: totals.subtotal,
-    impuesto: totals.tax,
-    total: totals.total,
-    tasa_impuesto: totals.taxRate,
+    ...mappedTicket,
+    ...mappedTotals,
     items: mappedItems
+  }
+}
+
+async function getTicketTotals(companyCen, ticketId) {
+  return mapTotals(await apiCall(`/sales/companies/${companyCen}/tickets/${ticketId}/totals`))
+}
+
+async function getMappedTicketItem(companyCen, ticketId, itemId) {
+  const [items, products] = await Promise.all([
+    apiCall(`/sales/companies/${companyCen}/tickets/${ticketId}/items`),
+    getProductos()
+  ])
+  const item = asArray(items).find(i => ticketItemId(i) === itemId) || {}
+  const product = products.find(prod => prod.id === item.productCen) || {}
+
+  return {
+    id: ticketItemId(item),
+    producto_id: item.productCen,
+    nombre: product.nombre || item.productName || '',
+    categoria: product.categoria || '',
+    cantidad: asNumber(item.quantity, 0),
+    precio_unitario: asNumber(item.unitPrice, 0),
+    subtotal: asNumber(item.quantity, 0) * asNumber(item.unitPrice, 0),
+    nota: item.note || item.notes || ''
   }
 }
 
@@ -391,25 +450,16 @@ export async function agregarItem(ticketId, data) {
     body: JSON.stringify({
       productCen: data.producto_id,
       quantity: data.cantidad,
-      notes: data.nota || ''
+      note: data.nota || ''
     })
   })
   
-  const products = await getProductos()
-  const p = products.find(prod => prod.id === res.productCen) || {}
+  const item = await getMappedTicketItem(companyCen, ticketId, ticketItemId(res))
+  const ticketTotals = await getTicketTotals(companyCen, ticketId)
   
   return {
-    item: {
-      id: res.cen,
-      producto_id: res.productCen,
-      nombre: p.nombre || '',
-      categoria: p.categoria || '',
-      cantidad: res.quantity,
-      precio_unitario: res.unitPrice,
-      subtotal: res.quantity * res.unitPrice,
-      nota: res.notes
-    },
-    ticket_totals: res.ticket_totals
+    item,
+    ticket_totals: ticketTotals
   }
 }
 
@@ -418,28 +468,17 @@ export async function editarItem(ticketId, itemId, data) {
   const res = await apiCall(`/sales/companies/${companyCen}/tickets/${ticketId}/items/${itemId}`, {
     method: 'PATCH',
     body: JSON.stringify({
-      quantity: data.cantidad,
-      notes: data.nota
+      ...(data.cantidad != null ? { quantity: data.cantidad } : {}),
+      ...(data.nota != null ? { note: data.nota } : {})
     })
   })
   
-  const items = await apiCall(`/sales/companies/${companyCen}/tickets/${ticketId}/items`)
-  const item = items.find(i => i.cen === itemId) || {}
-  const products = await getProductos()
-  const p = products.find(prod => prod.id === item.productCen) || {}
+  const item = await getMappedTicketItem(companyCen, ticketId, itemId)
+  const ticketTotals = await getTicketTotals(companyCen, ticketId)
   
   return {
-    item: {
-      id: item.cen,
-      producto_id: item.productCen,
-      nombre: p.nombre || '',
-      categoria: p.categoria || '',
-      cantidad: item.quantity,
-      precio_unitario: item.unitPrice,
-      subtotal: item.quantity * item.unitPrice,
-      nota: item.notes
-    },
-    ticket_totals: res.ticket_totals
+    item,
+    ticket_totals: ticketTotals
   }
 }
 
@@ -448,7 +487,10 @@ export async function eliminarItem(ticketId, itemId) {
   const res = await apiCall(`/sales/companies/${companyCen}/tickets/${ticketId}/items/${itemId}`, {
     method: 'DELETE'
   })
-  return res
+  return {
+    ...res,
+    ticket_totals: res.ticket_totals || await getTicketTotals(companyCen, ticketId)
+  }
 }
 
 export async function cancelarTicket(id) {
@@ -486,16 +528,17 @@ export async function getKDS(estacionId) {
   const companyCen = await getCompanyCen()
   const estaciones = await apiCall(`/sales/companies/${companyCen}/kds/teams`)
   
-  let targetStation = estaciones.find(e => e.cen === estacionId)
+  const stations = asArray(estaciones)
+  let targetStation = stations.find(e => e.teamCen === estacionId || e.cen === estacionId)
   if (!targetStation) {
     if (estacionId === 1 || estacionId === '1') {
-      targetStation = estaciones.find(e => e.stationType === 'KITCHEN')
+      targetStation = stations.find(e => e.stationType === 'KITCHEN' || e.name?.toLowerCase().includes('cocina')) || stations[0]
     } else if (estacionId === 2 || estacionId === '2') {
-      targetStation = estaciones.find(e => e.stationType === 'BAR')
+      targetStation = stations.find(e => e.stationType === 'BAR' || e.name?.toLowerCase().includes('bar')) || stations[1]
     }
   }
   
-  const stationCen = targetStation ? targetStation.cen : estacionId
+  const stationCen = targetStation ? (targetStation.teamCen || targetStation.cen) : estacionId
   const res = await apiCall(`/sales/companies/${companyCen}/kds/teams/${stationCen}/items`)
   
   if (res && res.length > 0 && res[0].items !== undefined) {
@@ -521,25 +564,25 @@ export async function getKDS(estacionId) {
   }
 
   const comandasGrouped = {}
-  for (const item of res) {
-    const ticketId = item.ticketCen
+  for (const item of asArray(res)) {
+    const ticketId = item.ticketCen || item.ticket_id
     if (!comandasGrouped[ticketId]) {
       comandasGrouped[ticketId] = {
-        comanda_id: item.cen,
+        comanda_id: ticketId,
         ticket_id: ticketId,
         mesero: item.mesero || 'Mesero',
-        hora: item.createdAt,
+        hora: item.createdAt || new Date().toISOString(),
         items: []
       }
     }
     
-    const map_status = {'PENDING': 'pendiente', 'IN_PROGRESS': 'en_preparacion', 'READY': 'listo'}
+    const map_status = {'PENDING': 'pendiente', 'IN_PROGRESS': 'en_preparacion', 'READY': 'listo', pendiente: 'pendiente', en_preparacion: 'en_preparacion', listo: 'listo'}
     comandasGrouped[ticketId].items.push({
-      id: item.cen,
-      nombre: item.productName,
-      cantidad: item.quantity,
-      nota: item.notes,
-      estado: map_status[item.status] || item.status.toLowerCase()
+      id: ticketItemId(item),
+      nombre: item.productName || item.productCen,
+      cantidad: asNumber(item.quantity, 0),
+      nota: item.note || item.notes || '',
+      estado: map_status[item.status] || String(item.status || 'PENDING').toLowerCase()
     })
   }
   
@@ -568,10 +611,10 @@ export async function getDashboard() {
     getProductos()
   ])
   
-  const mappedTopProducts = topProducts.map(tp => {
+  const mappedTopProducts = asArray(topProducts).map(tp => {
     const p = products.find(prod => prod.id === tp.productCen) || {}
     return {
-      nombre: p.nombre || tp.productCen,
+      nombre: p.nombre || tp.productName || tp.productCen,
       categoria: p.categoria || '',
       unidades_vendidas: tp.quantity,
       total_vendido: tp.quantity * (p.precio || 0.0)
@@ -585,16 +628,16 @@ export async function getDashboard() {
   }
   
   const map_status = {'PENDING': 'pendiente', 'IN_PROGRESS': 'en_preparacion', 'READY': 'listo'}
-  for (const statusVal of kdsStatus) {
+  for (const statusVal of asArray(kdsStatus)) {
     const mappedKey = map_status[statusVal.status]
     if (mappedKey) comandas_estado[mappedKey] = statusVal.count
   }
   
   return {
     ventas_hoy: {
-      total_tickets: 0,
-      total_vendido: dailySales.total || 0.0,
-      ticket_promedio: 0.0
+      total_tickets: asNumber(dailySales.ticketsCount ?? dailySales.totalTickets, 0),
+      total_vendido: asNumber(dailySales.totalSales ?? dailySales.total, 0),
+      ticket_promedio: asNumber(dailySales.averageTicket, 0)
     },
     top_productos: mappedTopProducts,
     productos_agotados: products.filter(p => p.stock <= 0).map(p => ({ id: p.id, nombre: p.nombre, stock: 0 })),
@@ -609,14 +652,17 @@ export async function getDashboard() {
 export async function getConfiguracion() {
   const companyCen = await getCompanyCen()
   const res = await apiCall(`/sales/companies/${companyCen}/tax-configuration`)
-  return { tasa_impuesto: res.taxRate }
+  const value = asNumber(res.taxRate ?? res.globalTaxPercentage, 13)
+  return { tasa_impuesto: value > 1 ? value / 100 : value }
 }
 
 export async function updateConfiguracion(data) {
   const companyCen = await getCompanyCen()
+  const percentage = asNumber(data.tasa_impuesto, 0)
   const res = await apiCall(`/sales/companies/${companyCen}/tax-configuration`, {
     method: 'PUT',
-    body: JSON.stringify({ taxRate: data.tasa_impuesto })
+    body: JSON.stringify({ globalTaxPercentage: percentage > 1 ? percentage : percentage * 100 })
   })
-  return { tasa_impuesto: res.taxRate }
+  const value = asNumber(res.taxRate ?? res.globalTaxPercentage, percentage)
+  return { tasa_impuesto: value > 1 ? value / 100 : value }
 }
