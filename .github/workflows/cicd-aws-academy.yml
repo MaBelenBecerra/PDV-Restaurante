@@ -2,9 +2,8 @@ name: CI/CD Pipeline - PDV Restaurante (AWS Academy)
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch: # Permite disparar el pipeline manualmente (Despliegue semi-automático)
+    branches: [main, master]
+  workflow_dispatch: 
 
 jobs:
   test:
